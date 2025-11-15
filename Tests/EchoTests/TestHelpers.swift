@@ -3,7 +3,6 @@
 // Helper utilities for testing
 
 import Foundation
-import XCTest
 
 /// Loads the OpenAI API key from environment or .env file
 func loadAPIKey() -> String? {

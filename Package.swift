@@ -17,8 +17,9 @@ let package = Package(
         // HTTP client for Responses API
         .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.20.0"),
         // Advanced stream operations for async sequences
-        .package(url: "https://github.com/apple/swift-async-algorithms.git", from: "1.0.0")
-        // Swift Testing is now built into Swift 6 - no package needed!
+        .package(url: "https://github.com/apple/swift-async-algorithms.git", from: "1.0.0"),
+        // Swift Testing framework
+        .package(url: "https://github.com/apple/swift-testing.git", from: "0.10.0")
     ],
     targets: [
         .target(
@@ -34,8 +35,8 @@ let package = Package(
         .testTarget(
             name: "EchoTests",
             dependencies: [
-                "Echo"
-                // Swift Testing is now built-in with Swift 6
+                "Echo",
+                .product(name: "Testing", package: "swift-testing")
             ],
             resources: [
                 .copy("Fixtures/Cassettes")
