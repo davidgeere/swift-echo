@@ -1,6 +1,6 @@
 # Echo Test Suite Documentation
 
-**Last Updated**: November 15, 2024  
+**Last Updated**: November 15, 2025  
 **Test Framework**: Swift Testing  
 **Total Tests**: 63  
 **Pass Rate**: 90% (57 passing, 6 failing)
@@ -28,7 +28,7 @@ The Echo test suite is organized into focused test suites covering different asp
 
 **Suite Status**: ✅ 13/13 passing  
 **File**: [`MessageQueueTests.swift`](MessageQueueTests.swift)  
-**Last Run**: November 15, 2024
+**Last Run**: November 15, 2025
 
 | Test Name | Purpose | Status | Notes |
 |-----------|---------|--------|-------|
@@ -59,7 +59,7 @@ The Echo test suite is organized into focused test suites covering different asp
 
 **Suite Status**: ✅ 6/6 passing  
 **File**: [`WebSocketDisconnectionTests.swift`](WebSocketDisconnectionTests.swift)  
-**Last Run**: November 15, 2024
+**Last Run**: November 15, 2025
 
 | Test Name | Purpose | Status | Notes |
 |-----------|---------|--------|-------|
@@ -76,7 +76,7 @@ The Echo test suite is organized into focused test suites covering different asp
 
 **Suite Status**: ✅ 6/6 passing  
 **File**: [`ConversationVADTests.swift`](ConversationVADTests.swift)  
-**Last Run**: November 15, 2024
+**Last Run**: November 15, 2025
 
 | Test Name | Purpose | Status | Notes |
 |-----------|---------|--------|-------|
@@ -93,7 +93,7 @@ The Echo test suite is organized into focused test suites covering different asp
 
 **Suite Status**: ✅ 20/20 passing  
 **File**: [`EmbeddingsAPITests.swift`](EmbeddingsAPITests.swift)  
-**Last Run**: November 15, 2024
+**Last Run**: November 15, 2025
 
 ### Core Functionality (6/6 ✅)
 | Test Name | Purpose | Status |
@@ -135,7 +135,7 @@ The Echo test suite is organized into focused test suites covering different asp
 
 **Suite Status**: ⚠️ 7/8 passing (87.5%)  
 **File**: [`TextResponseReturnTest.swift`](TextResponseReturnTest.swift)  
-**Last Run**: November 15, 2024
+**Last Run**: November 15, 2025
 
 | Test Name | Purpose | Status | Notes |
 |-----------|---------|--------|-------|
@@ -155,7 +155,7 @@ The Echo test suite is organized into focused test suites covering different asp
 
 **Suite Status**: ✅ 1/1 passing  
 **File**: [`ToolChoiceFixTest.swift`](ToolChoiceFixTest.swift)  
-**Last Run**: November 15, 2024
+**Last Run**: November 15, 2025
 
 | Test Name | Purpose | Status | Notes |
 |-----------|---------|--------|-------|
@@ -167,7 +167,7 @@ The Echo test suite is organized into focused test suites covering different asp
 
 **Suite Status**: ✅ 2/2 passing  
 **File**: [`ResponseFormatFixTest.swift`](ResponseFormatFixTest.swift)  
-**Last Run**: November 15, 2024
+**Last Run**: November 15, 2025
 
 | Test Name | Purpose | Status | Notes |
 |-----------|---------|--------|-------|
@@ -180,7 +180,7 @@ The Echo test suite is organized into focused test suites covering different asp
 
 **Suite Status**: ❌ 0/4 passing (0%)  
 **File**: [`ReasoningEffortTests.swift`](ReasoningEffortTests.swift)  
-**Last Run**: November 15, 2024
+**Last Run**: November 15, 2025
 
 | Test Name | Purpose | Status | Issue |
 |-----------|---------|--------|-------|
@@ -199,7 +199,7 @@ The Echo test suite is organized into focused test suites covering different asp
 
 **Suite Status**: ✅ 1/1 passing  
 **File**: [`SimpleLiveTest.swift`](SimpleLiveTest.swift)  
-**Last Run**: November 15, 2024
+**Last Run**: November 15, 2025
 
 | Test Name | Purpose | Status | Duration | Notes |
 |-----------|---------|--------|----------|-------|
@@ -216,7 +216,7 @@ The Echo test suite is organized into focused test suites covering different asp
 
 **Suite Status**: ❌ 0/1 passing (0%)  
 **File**: [`LiveStructuredOutputTest.swift`](LiveStructuredOutputTest.swift)  
-**Last Run**: November 15, 2024
+**Last Run**: November 15, 2025
 
 | Test Name | Purpose | Status | Issue |
 |-----------|---------|--------|-------|
