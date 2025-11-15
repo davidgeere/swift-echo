@@ -1,0 +1,19 @@
+{
+  "interactions" : [
+    {
+      "request" : {
+        "bodyJSON" : "{\"input\":[{\"content\":\"What's the weather in San Francisco?\",\"role\":\"user\",\"type\":\"message\"}],\"model\":\"gpt-5-mini\",\"stream\":false,\"tools\":[{\"description\":\"Get the current weather for a location\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"location\":{\"description\":\"City and state, e.g. San Francisco, CA\",\"type\":\"string\"},\"unit\":{\"description\":\"Temperature unit (celsius or fahrenheit)\",\"type\":\"string\"}},\"required\":[\"location\"],\"type\":\"object\"},\"type\":\"function\"}]}",
+        "endpoint" : "\/responses",
+        "method" : "POST"
+      },
+      "response" : {
+        "bodyJSON" : "{\"created_at\":1761289631,\"id\":\"resp_0dec180ac1f04cd40068fb259edf748194a5fd0e58d8c57c0d\",\"metadata\":{},\"model\":\"gpt-5-mini-2025-08-07\",\"object\":\"response\",\"output\":[{\"id\":\"rs_0dec180ac1f04cd40068fb259fafb08194ac867ee7e60596de\",\"type\":\"reasoning\"},{\"type\":\"unknown\"}],\"status\":\"completed\",\"usage\":{\"input_tokens\":77,\"output_tokens\":156,\"total_tokens\":233}}",
+        "headers" : {
+          "Content-Type" : "application\/json"
+        },
+        "statusCode" : 200
+      }
+    }
+  ],
+  "name" : "responses_tool_calling"
+}

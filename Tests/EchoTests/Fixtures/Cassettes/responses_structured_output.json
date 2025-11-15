@@ -1,0 +1,19 @@
+{
+  "interactions" : [
+    {
+      "request" : {
+        "bodyJSON" : "{\"input\":[{\"content\":\"Generate a JSON object with fields: name (Alice), age (30), city (NYC)\",\"role\":\"user\",\"type\":\"message\"}],\"model\":\"gpt-5-mini\",\"stream\":false}",
+        "endpoint" : "\/responses",
+        "method" : "POST"
+      },
+      "response" : {
+        "bodyJSON" : "{\"created_at\":1761289631,\"id\":\"resp_03ace2813fa1fb840068fb259ee1bc819495ba6dde4cfda709\",\"metadata\":{},\"model\":\"gpt-5-mini-2025-08-07\",\"object\":\"response\",\"output\":[{\"id\":\"rs_03ace2813fa1fb840068fb25a030dc81949a279a9604075bf6\",\"type\":\"reasoning\"},{\"content\":[{\"text\":\"{\\\"name\\\":\\\"Alice\\\",\\\"age\\\":30,\\\"city\\\":\\\"NYC\\\"}\",\"type\":\"text\"}],\"role\":\"assistant\"}],\"status\":\"completed\",\"usage\":{\"input_tokens\":26,\"output_tokens\":148,\"total_tokens\":174}}",
+        "headers" : {
+          "Content-Type" : "application\/json"
+        },
+        "statusCode" : 200
+      }
+    }
+  ],
+  "name" : "responses_structured_output"
+}

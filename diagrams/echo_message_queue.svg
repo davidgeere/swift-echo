@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="700" height="300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#333"/>
+    </marker>
+  </defs>
+  
+  <!-- Title -->
+  <text x="350" y="25" font-family="SF Pro Display, system-ui, sans-serif" font-size="16" font-weight="600" text-anchor="middle">Message Queue Architecture</text>
+  
+  <!-- Pending Messages Section -->
+  <g id="pending-section">
+    <text x="100" y="60" font-family="SF Pro Display, system-ui, sans-serif" font-size="12" font-weight="500" fill="#dc3545">Pending Messages</text>
+    
+    <!-- User Message (no transcript) -->
+    <rect x="30" y="75" width="140" height="60" fill="#fff" stroke="#dc3545" stroke-width="2" rx="3"/>
+    <text x="100" y="95" font-family="SF Pro Display, system-ui, sans-serif" font-size="11" text-anchor="middle">User Message</text>
+    <text x="100" y="110" font-family="SF Pro Display, system-ui, sans-serif" font-size="10" text-anchor="middle" fill="#6c757d">Seq: 1</text>
+    <text x="100" y="125" font-family="SF Pro Display, system-ui, sans-serif" font-size="10" text-anchor="middle" fill="#dc3545">⏳ Awaiting transcript</text>
+    
+    <!-- Assistant Message -->
+    <rect x="30" y="145" width="140" height="60" fill="#fff" stroke="#ffc107" stroke-width="2" rx="3"/>
+    <text x="100" y="165" font-family="SF Pro Display, system-ui, sans-serif" font-size="11" text-anchor="middle">Assistant Message</text>
+    <text x="100" y="180" font-family="SF Pro Display, system-ui, sans-serif" font-size="10" text-anchor="middle" fill="#6c757d">Seq: 2</text>
+    <text x="100" y="195" font-family="SF Pro Display, system-ui, sans-serif" font-size="10" text-anchor="middle" fill="#ffc107">✓ Complete</text>
+  </g>
+  
+  <!-- Processing Arrow -->
+  <g id="processing">
+    <line x1="190" y1="140" x2="270" y2="140" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+    <text x="230" y="130" font-family="SF Pro Display, system-ui, sans-serif" font-size="10" text-anchor="middle" fill="#333">Process</text>
+    <text x="230" y="160" font-family="SF Pro Display, system-ui, sans-serif" font-size="9" text-anchor="middle" fill="#6c757d">when transcript</text>
+    <text x="230" y="173" font-family="SF Pro Display, system-ui, sans-serif" font-size="9" text-anchor="middle" fill="#6c757d">completes</text>
+  </g>
+  
+  <!-- Message Queue Core -->
+  <rect x="280" y="70" width="160" height="140" fill="#e7f3ff" stroke="#007bff" stroke-width="2" rx="5"/>
+  <text x="360" y="95" font-family="SF Pro Display, system-ui, sans-serif" font-size="13" font-weight="600" text-anchor="middle" fill="#007bff">Message Queue</text>
+  
+  <g id="queue-logic">
+    <text x="360" y="115" font-family="SF Pro Display, system-ui, sans-serif" font-size="10" text-anchor="middle">1. Assign sequence numbers</text>
+    <text x="360" y="135" font-family="SF Pro Display, system-ui, sans-serif" font-size="10" text-anchor="middle">2. Hold until ready</text>
+    <text x="360" y="155" font-family="SF Pro Display, system-ui, sans-serif" font-size="10" text-anchor="middle">3. Finalize in order</text>
+    <text x="360" y="175" font-family="SF Pro Display, system-ui, sans-serif" font-size="10" text-anchor="middle">4. Emit to subscribers</text>
+  </g>
+  
+  <!-- Output Arrow -->
+  <line x1="450" y1="140" x2="520" y2="140" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Completed Messages Section -->
+  <g id="completed-section">
+    <text x="590" y="60" font-family="SF Pro Display, system-ui, sans-serif" font-size="12" font-weight="500" fill="#28a745">Completed Messages</text>
+    
+    <!-- User Message (with transcript) -->
+    <rect x="530" y="75" width="140" height="60" fill="#fff" stroke="#28a745" stroke-width="2" rx="3"/>
+    <text x="600" y="95" font-family="SF Pro Display, system-ui, sans-serif" font-size="11" text-anchor="middle">User Message</text>
+    <text x="600" y="110" font-family="SF Pro Display, system-ui, sans-serif" font-size="10" text-anchor="middle" fill="#6c757d">Seq: 1</text>
+    <text x="600" y="125" font-family="SF Pro Display, system-ui, sans-serif" font-size="10" text-anchor="middle" fill="#28a745">✓ "Hello, Echo"</text>
+    
+    <!-- Assistant Message -->
+    <rect x="530" y="145" width="140" height="60" fill="#fff" stroke="#28a745" stroke-width="2" rx="3"/>
+    <text x="600" y="165" font-family="SF Pro Display, system-ui, sans-serif" font-size="11" text-anchor="middle">Assistant Message</text>
+    <text x="600" y="180" font-family="SF Pro Display, system-ui, sans-serif" font-size="10" text-anchor="middle" fill="#6c757d">Seq: 2</text>
+    <text x="600" y="195" font-family="SF Pro Display, system-ui, sans-serif" font-size="10" text-anchor="middle" fill="#28a745">✓ "Hi! How can..."</text>
+  </g>
+  
+  <!-- Key Point -->
+  <rect x="200" y="230" width="300" height="50" fill="#fff3cd" stroke="#ffc107" stroke-width="1.5" rx="3"/>
+  <text x="350" y="250" font-family="SF Pro Display, system-ui, sans-serif" font-size="11" font-weight="500" text-anchor="middle">💡 Key Insight</text>
+  <text x="350" y="267" font-family="SF Pro Display, system-ui, sans-serif" font-size="10" text-anchor="middle">Messages always emit in correct order,</text>
+  <text x="350" y="280" font-family="SF Pro Display, system-ui, sans-serif" font-size="10" text-anchor="middle">even if transcripts arrive out of sequence</text>
+</svg>

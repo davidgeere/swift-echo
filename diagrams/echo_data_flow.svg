@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="750" height="350" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#495057"/>
+    </marker>
+  </defs>
+  
+  <!-- Title -->
+  <text x="375" y="25" font-family="SF Pro Display, system-ui, sans-serif" font-size="16" font-weight="600" text-anchor="middle">Data Flow Through Echo</text>
+  
+  <!-- User Input -->
+  <ellipse cx="60" cy="100" rx="45" ry="30" fill="#e8f5e9" stroke="#4caf50" stroke-width="2"/>
+  <text x="60" y="105" font-family="SF Pro Display, system-ui, sans-serif" font-size="12" text-anchor="middle">User Input</text>
+  
+  <!-- Echo API -->
+  <rect x="150" y="75" width="100" height="50" fill="#fff" stroke="#007bff" stroke-width="2" rx="5"/>
+  <text x="200" y="95" font-family="SF Pro Display, system-ui, sans-serif" font-size="12" text-anchor="middle" font-weight="500">Echo API</text>
+  <text x="200" y="112" font-family="SF Pro Display, system-ui, sans-serif" font-size="10" text-anchor="middle" fill="#6c757d">Entry Point</text>
+  
+  <!-- Mode Router (Decision) -->
+  <g transform="translate(320,100)">
+    <polygon points="0,-25 40,0 0,25 -40,0" fill="#fff3cd" stroke="#ffc107" stroke-width="2"/>
+    <text x="0" y="5" font-family="SF Pro Display, system-ui, sans-serif" font-size="11" text-anchor="middle">Mode?</text>
+  </g>
+  
+  <!-- Realtime Client (Audio Path) -->
+  <rect x="420" y="45" width="120" height="45" fill="#e3f2fd" stroke="#2196f3" stroke-width="2" rx="4"/>
+  <text x="480" y="62" font-family="SF Pro Display, system-ui, sans-serif" font-size="11" text-anchor="middle" font-weight="500">Realtime Client</text>
+  <text x="480" y="78" font-family="SF Pro Display, system-ui, sans-serif" font-size="9" text-anchor="middle" fill="#666">WebSocket</text>
+  
+  <!-- Responses Client (Text Path) -->
+  <rect x="420" y="110" width="120" height="45" fill="#e3f2fd" stroke="#2196f3" stroke-width="2" rx="4"/>
+  <text x="480" y="127" font-family="SF Pro Display, system-ui, sans-serif" font-size="11" text-anchor="middle" font-weight="500">Responses Client</text>
+  <text x="480" y="143" font-family="SF Pro Display, system-ui, sans-serif" font-size="9" text-anchor="middle" fill="#666">REST/SSE</text>
+  
+  <!-- Message Queue -->
+  <rect x="420" y="190" width="120" height="60" fill="#e7f3ff" stroke="#007bff" stroke-width="2" rx="5"/>
+  <text x="480" y="210" font-family="SF Pro Display, system-ui, sans-serif" font-size="12" text-anchor="middle" font-weight="600" fill="#007bff">Message Queue</text>
+  <text x="480" y="227" font-family="SF Pro Display, system-ui, sans-serif" font-size="9" text-anchor="middle">Sequence</text>
+  <text x="480" y="240" font-family="SF Pro Display, system-ui, sans-serif" font-size="9" text-anchor="middle">Finalize</text>
+  
+  <!-- Event System -->
+  <rect x="590" y="190" width="120" height="60" fill="#fff3cd" stroke="#ffc107" stroke-width="2" rx="5"/>
+  <text x="650" y="210" font-family="SF Pro Display, system-ui, sans-serif" font-size="12" text-anchor="middle" font-weight="600">Event System</text>
+  <text x="650" y="227" font-family="SF Pro Display, system-ui, sans-serif" font-size="9" text-anchor="middle">Publish</text>
+  <text x="650" y="240" font-family="SF Pro Display, system-ui, sans-serif" font-size="9" text-anchor="middle">Subscribe</text>
+  
+  <!-- UI/Subscribers -->
+  <ellipse cx="650" cy="100" rx="55" ry="30" fill="#e8f5e9" stroke="#4caf50" stroke-width="2"/>
+  <text x="650" y="100" font-family="SF Pro Display, system-ui, sans-serif" font-size="12" text-anchor="middle">UI Updates</text>
+  <text x="650" y="115" font-family="SF Pro Display, system-ui, sans-serif" font-size="10" text-anchor="middle" fill="#666">Subscribers</text>
+  
+  <!-- Connection Arrows -->
+  <!-- User to API -->
+  <line x1="105" y1="100" x2="145" y2="100" stroke="#495057" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- API to Router -->
+  <line x1="255" y1="100" x2="275" y2="100" stroke="#495057" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Router to Realtime (audio) -->
+  <line x1="360" y1="85" x2="415" y2="70" stroke="#2196f3" stroke-width="2" marker-end="url(#arrowhead)"/>
+  <text x="385" y="70" font-family="SF Pro Display, system-ui, sans-serif" font-size="9" fill="#2196f3">audio</text>
+  
+  <!-- Router to Responses (text) -->
+  <line x1="360" y1="115" x2="415" y2="130" stroke="#2196f3" stroke-width="2" marker-end="url(#arrowhead)"/>
+  <text x="385" y="145" font-family="SF Pro Display, system-ui, sans-serif" font-size="9" fill="#2196f3">text</text>
+  
+  <!-- Realtime to Queue -->
+  <path d="M 480 95 L 480 185" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" stroke-dasharray="3,2"/>
+  
+  <!-- Responses to Queue -->
+  <path d="M 480 160 L 480 185" stroke="#495057" stroke-width="1.5" marker-end="url(#arrowhead)" stroke-dasharray="3,2"/>
+  
+  <!-- Queue to Events -->
+  <line x1="545" y1="220" x2="585" y2="220" stroke="#495057" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Events to UI -->
+  <path d="M 650 185 L 650 135" stroke="#4caf50" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Labels on flows -->
+  <text x="125" y="95" font-family="SF Pro Display, system-ui, sans-serif" font-size="8" fill="#666">1</text>
+  <text x="265" y="95" font-family="SF Pro Display, system-ui, sans-serif" font-size="8" fill="#666">2</text>
+  <text x="490" y="175" font-family="SF Pro Display, system-ui, sans-serif" font-size="8" fill="#666">3</text>
+  <text x="565" y="215" font-family="SF Pro Display, system-ui, sans-serif" font-size="8" fill="#666">4</text>
+  <text x="655" y="165" font-family="SF Pro Display, system-ui, sans-serif" font-size="8" fill="#666">5</text>
+  
+  <!-- Legend -->
+  <g id="legend">
+    <rect x="20" y="280" width="280" height="55" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1" rx="3"/>
+    <text x="30" y="298" font-family="SF Pro Display, system-ui, sans-serif" font-size="10" font-weight="500">Flow Steps:</text>
+    <text x="30" y="313" font-family="SF Pro Display, system-ui, sans-serif" font-size="9">1. User input (text/audio) → 2. Route by mode → 3. Process response</text>
+    <text x="30" y="328" font-family="SF Pro Display, system-ui, sans-serif" font-size="9">4. Queue &amp; sequence → 5. Emit events for UI</text>
+</g>
+</svg>

@@ -1,0 +1,19 @@
+{
+  "interactions" : [
+    {
+      "request" : {
+        "bodyJSON" : "{\"input\":[{\"content\":\"Say 'Hello from Swift Echo!'\",\"role\":\"user\",\"type\":\"message\"}],\"model\":\"gpt-5-mini\",\"stream\":false}",
+        "endpoint" : "\/responses",
+        "method" : "POST"
+      },
+      "response" : {
+        "bodyJSON" : "{\"created_at\":1761289630,\"id\":\"resp_03935be5edf6567f0068fb259edff48192b86208944e6aa91f\",\"metadata\":{},\"model\":\"gpt-5-mini-2025-08-07\",\"object\":\"response\",\"output\":[{\"id\":\"rs_03935be5edf6567f0068fb259f8718819290922305d51733d7\",\"type\":\"reasoning\"},{\"content\":[{\"text\":\"Hello from Swift Echo!\",\"type\":\"text\"}],\"role\":\"assistant\"}],\"status\":\"completed\",\"usage\":{\"input_tokens\":13,\"output_tokens\":139,\"total_tokens\":152}}",
+        "headers" : {
+          "Content-Type" : "application\/json"
+        },
+        "statusCode" : 200
+      }
+    }
+  ],
+  "name" : "responses_simple_completion"
+}

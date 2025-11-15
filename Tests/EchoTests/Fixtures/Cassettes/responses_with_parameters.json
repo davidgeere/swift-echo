@@ -1,0 +1,19 @@
+{
+  "interactions" : [
+    {
+      "request" : {
+        "bodyJSON" : "{\"input\":[{\"content\":\"Count from 1 to 5\",\"role\":\"user\",\"type\":\"message\"}],\"max_output_tokens\":50,\"model\":\"gpt-5-mini\",\"stream\":false}",
+        "endpoint" : "\/responses",
+        "method" : "POST"
+      },
+      "response" : {
+        "bodyJSON" : "{\"created_at\":1761289632,\"id\":\"resp_0e718bd1f49deca70068fb25a08fac819198466502bcdf07a5\",\"metadata\":{},\"model\":\"gpt-5-mini-2025-08-07\",\"object\":\"response\",\"output\":[{\"id\":\"rs_0e718bd1f49deca70068fb25a146008191bae568417420de31\",\"type\":\"reasoning\"}],\"status\":\"incomplete\",\"usage\":{\"input_tokens\":13,\"output_tokens\":0,\"total_tokens\":13}}",
+        "headers" : {
+          "Content-Type" : "application\/json"
+        },
+        "statusCode" : 200
+      }
+    }
+  ],
+  "name" : "responses_with_parameters"
+}
