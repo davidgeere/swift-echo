@@ -94,6 +94,62 @@ public actor EventEmitter {
         return handlerId
     }
 
+    /// Registers a synchronous event handler for multiple event types
+    /// - Parameters:
+    ///   - eventTypes: Array of event types to listen for
+    ///   - handler: The synchronous handler closure to execute when any of the events are emitted
+    /// - Returns: Array of unique handler IDs (one per event type) that can be used to remove handlers later
+    @discardableResult
+    public func when(
+        _ eventTypes: [EventType],
+        handler: @escaping EventHandlerClosure
+    ) -> [UUID] {
+        return eventTypes.map { eventType in
+            when(eventType, handler: handler)
+        }
+    }
+
+    /// Registers an asynchronous event handler for multiple event types
+    /// - Parameters:
+    ///   - eventTypes: Array of event types to listen for
+    ///   - asyncHandler: The asynchronous handler closure to execute when any of the events are emitted
+    /// - Returns: Array of unique handler IDs (one per event type) that can be used to remove handlers later
+    @discardableResult
+    public func when(
+        _ eventTypes: [EventType],
+        asyncHandler: @escaping AsyncEventHandlerClosure
+    ) -> [UUID] {
+        return eventTypes.map { eventType in
+            when(eventType, asyncHandler: asyncHandler)
+        }
+    }
+
+    /// Registers a synchronous event handler for multiple event types (variadic)
+    /// - Parameters:
+    ///   - eventTypes: Variadic list of event types to listen for
+    ///   - handler: The synchronous handler closure to execute when any of the events are emitted
+    /// - Returns: Array of unique handler IDs (one per event type) that can be used to remove handlers later
+    @discardableResult
+    public func when(
+        _ eventTypes: EventType...,
+        handler: @escaping EventHandlerClosure
+    ) -> [UUID] {
+        return when(eventTypes, handler: handler)
+    }
+
+    /// Registers an asynchronous event handler for multiple event types (variadic)
+    /// - Parameters:
+    ///   - eventTypes: Variadic list of event types to listen for
+    ///   - asyncHandler: The asynchronous handler closure to execute when any of the events are emitted
+    /// - Returns: Array of unique handler IDs (one per event type) that can be used to remove handlers later
+    @discardableResult
+    public func when(
+        _ eventTypes: EventType...,
+        asyncHandler: @escaping AsyncEventHandlerClosure
+    ) -> [UUID] {
+        return when(eventTypes, asyncHandler: asyncHandler)
+    }
+
     // MARK: - Handler Removal
 
     /// Removes a specific event handler by its ID

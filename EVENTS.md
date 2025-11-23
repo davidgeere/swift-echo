@@ -17,9 +17,11 @@ Complete guide to all events emitted by Echo and how to leverage them using the 
 
 ## Event Handler Syntax
 
-Echo provides two ways to handle events:
+Echo provides flexible ways to handle events:
 
-### Synchronous Handler
+### Single Event Handler
+
+#### Synchronous Handler
 ```swift
 echo.when(.eventType) { event in
     // Handle event synchronously
@@ -27,7 +29,7 @@ echo.when(.eventType) { event in
 }
 ```
 
-### Asynchronous Handler
+#### Asynchronous Handler
 ```swift
 echo.when(.eventType) { event in
     // Handle event asynchronously
@@ -35,6 +37,61 @@ echo.when(.eventType) { event in
     await someAsyncOperation()
 }
 ```
+
+### Multiple Events Handler
+
+Listen to multiple events with a single handler using variadic parameters:
+
+```swift
+// Listen for multiple events with one handler (variadic syntax - recommended)
+echo.when(.userStartedSpeaking, .assistantStartedSpeaking) { event in
+    switch event {
+    case .userStartedSpeaking:
+        print("User started speaking")
+    case .assistantStartedSpeaking:
+        print("Assistant started speaking")
+    default:
+        break
+    }
+}
+```
+
+**Variadic Syntax (Recommended):**
+```swift
+echo.when(.eventTypeA, .eventTypeB, .eventTypeC) { event in
+    // Handle any of the specified events
+    // Use pattern matching to determine which event occurred
+}
+```
+
+**Array Syntax (Also Supported):**
+```swift
+echo.when([.eventTypeA, .eventTypeB, .eventTypeC]) { event in
+    // Handle any of the specified events
+    // Use pattern matching to determine which event occurred
+}
+```
+
+Both syntaxes are equivalent. The variadic syntax is more concise and Swift-idiomatic.
+
+This is equivalent to registering the same handler multiple times, but more concise:
+
+```swift
+// Equivalent to:
+echo.when(.userStartedSpeaking) { event in
+    // handler code
+}
+echo.when(.assistantStartedSpeaking) { event in
+    // same handler code
+}
+```
+
+**Benefits:**
+- Cleaner code when handling multiple events the same way
+- Single handler definition instead of duplicating code
+- Easier to maintain and update
+- Reduces code duplication
+- More readable with variadic syntax
 
 ---
 
@@ -708,6 +765,57 @@ echo.when(.userTranscriptionCompleted) { event in
     // Update UI with transcript
 }
 ```
+
+### Listening to Multiple Events
+
+Handle multiple events with a single handler:
+
+```swift
+// Handle all speaking events together (variadic syntax)
+echo.when(.userStartedSpeaking, .userStoppedSpeaking, 
+          .assistantStartedSpeaking, .assistantStoppedSpeaking) { event in
+    switch event {
+    case .userStartedSpeaking:
+        print("🎤 User started speaking")
+    case .userStoppedSpeaking:
+        print("🎤 User stopped speaking")
+    case .assistantStartedSpeaking:
+        print("🔊 Assistant started speaking")
+    case .assistantStoppedSpeaking:
+        print("🔊 Assistant stopped speaking")
+    default:
+        break
+    }
+}
+
+// Handle all error-related events
+echo.when(.error, .connectionStatusChanged) { event in
+    switch event {
+    case .error(let error):
+        print("Error: \(error)")
+    case .connectionStatusChanged(let isConnected):
+        if !isConnected {
+            print("Connection lost - may need retry")
+        }
+    default:
+        break
+    }
+}
+
+// Handle all transcription and response events
+echo.when(.userTranscriptionCompleted, .assistantResponseDone) { event in
+    switch event {
+    case .userTranscriptionCompleted(let transcript, _):
+        print("User: \(transcript)")
+    case .assistantResponseDone(_, let text):
+        print("Assistant: \(text)")
+    default:
+        break
+    }
+}
+```
+
+**Note:** You can also use array syntax if you prefer: `echo.when([.event1, .event2]) { ... }`
 
 ### Async Operations in Handlers
 

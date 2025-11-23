@@ -11,7 +11,7 @@ import Foundation
 /// Echo library version information
 public enum EchoVersion {
     /// Current version of the Echo library
-    public static let current = Version(major: 1, minor: 0, patch: 1)
+    public static let current = Version(major: 1, minor: 0, patch: 2)
     
     /// Version string (e.g., "1.0.0")
     public static var string: String {
@@ -81,6 +81,24 @@ public struct BuildInfo: Sendable {
 extension EchoVersion {
     /// Version history with release notes
     public static let history: [(version: Version, date: String, notes: String)] = [
+        (
+            version: Version(major: 1, minor: 0, patch: 2),
+            date: "2025-11-23",
+            notes: """
+            📚 Enhanced Event System
+            
+            Event Features:
+            • Multiple event listeners with array syntax: echo.when([.event1, .event2])
+            • Multiple event listeners with variadic syntax: echo.when(.event1, .event2)
+            • Comprehensive event documentation (EVENTS.md)
+            • Complete test coverage for event system
+            
+            Documentation:
+            • Added EVENTS.md with complete event reference
+            • Examples for all 25 event types
+            • Usage patterns and best practices
+            """
+        ),
         (
             version: Version(major: 1, minor: 0, patch: 1),
             date: "2025-11-23",

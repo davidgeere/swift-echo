@@ -189,6 +189,56 @@ public class Echo {
         }
     }
 
+    /// Registers a synchronous event handler for multiple event types
+    /// - Parameters:
+    ///   - eventTypes: Array of event types to listen for
+    ///   - handler: The handler closure to call when any of the events occur
+    public func when(
+        _ eventTypes: [EventType],
+        handler: @escaping @Sendable (EchoEvent) -> Void
+    ) {
+        let emitter = eventEmitter
+        Task {
+            await emitter.when(eventTypes, handler: handler)
+        }
+    }
+
+    /// Registers an asynchronous event handler for multiple event types
+    /// - Parameters:
+    ///   - eventTypes: Array of event types to listen for
+    ///   - asyncHandler: The async handler closure to call when any of the events occur
+    public func when(
+        _ eventTypes: [EventType],
+        asyncHandler: @escaping @Sendable (EchoEvent) async -> Void
+    ) {
+        let emitter = eventEmitter
+        Task {
+            await emitter.when(eventTypes, asyncHandler: asyncHandler)
+        }
+    }
+
+    /// Registers a synchronous event handler for multiple event types (variadic)
+    /// - Parameters:
+    ///   - eventTypes: Variadic list of event types to listen for
+    ///   - handler: The handler closure to call when any of the events occur
+    public func when(
+        _ eventTypes: EventType...,
+        handler: @escaping @Sendable (EchoEvent) -> Void
+    ) {
+        when(eventTypes, handler: handler)
+    }
+
+    /// Registers an asynchronous event handler for multiple event types (variadic)
+    /// - Parameters:
+    ///   - eventTypes: Variadic list of event types to listen for
+    ///   - asyncHandler: The async handler closure to call when any of the events occur
+    public func when(
+        _ eventTypes: EventType...,
+        asyncHandler: @escaping @Sendable (EchoEvent) async -> Void
+    ) {
+        when(eventTypes, asyncHandler: asyncHandler)
+    }
+
     // MARK: - Tool Registration
 
     /// Registers a tool/function that can be called by the model

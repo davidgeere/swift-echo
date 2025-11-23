@@ -5,6 +5,40 @@ All notable changes to Echo will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2025-11-23
+
+### Added
+
+#### Event System Enhancements
+- **Multiple event listeners** - Listen to multiple events with a single handler
+  - Array syntax: `echo.when([.event1, .event2]) { event in ... }`
+  - Variadic syntax: `echo.when(.event1, .event2) { event in ... }`
+  - Both syntaxes are equivalent and fully supported
+  - Reduces code duplication when handling multiple events the same way
+
+#### Documentation
+- **EVENTS.md** - Comprehensive event reference guide
+  - Complete documentation for all 25 event types
+  - Examples showing how to use each event
+  - Pattern matching examples for extracting event values
+  - Advanced usage patterns and best practices
+  - Event flow examples for complete conversations
+
+#### Testing
+- **Event system test suite** - Comprehensive test coverage
+  - 18 tests covering all event functionality
+  - Tests for single event handlers (sync and async)
+  - Tests for multiple events (array and variadic syntax)
+  - Tests for event value extraction
+  - Tests for handler removal and management
+  - Tests for Echo.when() integration
+
+### Technical
+- Added `when(_ eventTypes: [EventType], handler:)` overloads to `EventEmitter`
+- Added `when(_ eventTypes: EventType..., handler:)` variadic overloads to `EventEmitter`
+- Added matching public methods to `Echo` class
+- All handlers are thread-safe and properly isolated
+
 ## [1.0.1] - 2025-11-23
 
 ### Added
