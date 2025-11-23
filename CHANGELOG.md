@@ -5,6 +5,35 @@ All notable changes to Echo will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2025-11-23
+
+### Added
+
+#### All Events Handler
+- **Listen to all events** - New handler pattern for listening to every event emitted by Echo
+  - `echo.when { event in ... }` - Non-async handler (fire-and-forget, returns immediately)
+  - `await echo.when { event in ... }` - Async handler (returns handler IDs for removal)
+  - Handlers automatically registered for all event types
+  - Useful for logging, analytics, or global event monitoring
+
+#### Events Stream
+- **Async stream for all events** - Sequential event processing with `for await` loop
+  - `for await event in echo.events { ... }` - Process events sequentially
+  - Can break out of loop when done processing
+  - Useful for state machines or sequential event processing
+  - Each event processed completely before next one arrives
+
+### Changed
+- **Memory safety improvements** - Event handlers are now automatically cleaned up when Echo is deallocated
+  - Added `handlers.removeAll()` in `EventEmitter.deinit` to prevent memory leaks
+  - Prevents retain cycles from handler closures
+
+### Technical
+- Added 4 new `when()` overloads for all-events handling (sync/async variants)
+- Added `events` property exposing `AsyncStream<EchoEvent>` for sequential processing
+- Updated `EventEmitter.deinit` to clear handlers on deallocation
+- Added comprehensive test coverage (5 new tests) for all-events functionality
+
 ## [1.0.3] - 2025-01-27
 
 ### Added

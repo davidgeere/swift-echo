@@ -11,7 +11,7 @@ import Foundation
 /// Echo library version information
 public enum EchoVersion {
     /// Current version of the Echo library
-    public static let current = Version(major: 1, minor: 0, patch: 3)
+    public static let current = Version(major: 1, minor: 1, patch: 0)
     
     /// Version string (e.g., "1.0.0")
     public static var string: String {
@@ -25,7 +25,7 @@ public enum EchoVersion {
     
     /// Build information
     public static let build = BuildInfo(
-        date: "2025-01-27",
+        date: "2025-11-23",
         commit: "main"
     )
 }
@@ -81,6 +81,27 @@ public struct BuildInfo: Sendable {
 extension EchoVersion {
     /// Version history with release notes
     public static let history: [(version: Version, date: String, notes: String)] = [
+        (
+            version: Version(major: 1, minor: 1, patch: 0),
+            date: "2025-11-23",
+            notes: """
+            🎯 All Events Handler & Stream
+            
+            New Features:
+            • Listen to all events: echo.when { event in ... }
+            • Async stream: for await event in echo.events { ... }
+            • Sequential event processing with break support
+            • Automatic handler cleanup on deallocation
+            
+            Memory Safety:
+            • Handlers automatically cleaned up to prevent leaks
+            • Proper deinit cleanup in EventEmitter
+            
+            Testing:
+            • 5 new comprehensive tests for all-events functionality
+            • Full coverage of handler and stream patterns
+            """
+        ),
         (
             version: Version(major: 1, minor: 0, patch: 2),
             date: "2025-11-23",

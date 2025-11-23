@@ -239,6 +239,72 @@ public class Echo {
         when(eventTypes, asyncHandler: asyncHandler)
     }
 
+    // MARK: - All Events Handler
+
+    /// Registers a synchronous handler for ALL events
+    /// Returns immediately; handlers execute in background when events occur
+    /// - Parameter handler: The handler closure to call for every event
+    /// - Note: Handlers are automatically cleaned up when Echo is deallocated.
+    ///        Be careful not to capture `self` or other objects that might create retain cycles.
+    public func when(
+        handler: @escaping @Sendable (EchoEvent) -> Void
+    ) {
+        let emitter = eventEmitter
+        Task {
+            await emitter.when(EventType.allCases, handler: handler)
+        }
+    }
+
+    /// Registers a synchronous handler for ALL events (async version)
+    /// Use this when you want to ensure registration completes before continuing
+    /// - Parameter handler: The handler closure to call for every event
+    /// - Returns: Array of handler IDs (one per event type) that can be used to remove handlers later
+    /// - Note: Be careful not to capture `self` or other objects that might create retain cycles.
+    @discardableResult
+    public func when(
+        handler: @escaping @Sendable (EchoEvent) -> Void
+    ) async -> [UUID] {
+        let emitter = eventEmitter
+        return await emitter.when(EventType.allCases, handler: handler)
+    }
+
+    /// Registers an asynchronous handler for ALL events
+    /// Returns immediately; handlers execute in background when events occur
+    /// - Parameter asyncHandler: The async handler closure to call for every event
+    /// - Note: Handlers are automatically cleaned up when Echo is deallocated.
+    ///        Be careful not to capture `self` or other objects that might create retain cycles.
+    public func when(
+        asyncHandler: @escaping @Sendable (EchoEvent) async -> Void
+    ) {
+        let emitter = eventEmitter
+        Task {
+            await emitter.when(EventType.allCases, asyncHandler: asyncHandler)
+        }
+    }
+
+    /// Registers an asynchronous handler for ALL events (async version)
+    /// Use this when you want to ensure registration completes before continuing
+    /// - Parameter asyncHandler: The async handler closure to call for every event
+    /// - Returns: Array of handler IDs (one per event type) that can be used to remove handlers later
+    /// - Note: Be careful not to capture `self` or other objects that might create retain cycles.
+    @discardableResult
+    public func when(
+        asyncHandler: @escaping @Sendable (EchoEvent) async -> Void
+    ) async -> [UUID] {
+        let emitter = eventEmitter
+        return await emitter.when(EventType.allCases, asyncHandler: asyncHandler)
+    }
+
+    // MARK: - Events Stream
+
+    /// Stream of all emitted events
+    /// Use this to observe all events sequentially: `for await event in echo.events { ... }`
+    /// - Note: This creates an async sequence that yields events as they occur.
+    ///        You can break out of the loop when done processing events.
+    public var events: AsyncStream<EchoEvent> {
+        eventEmitter.events
+    }
+
     // MARK: - Tool Registration
 
     /// Registers a tool/function that can be called by the model

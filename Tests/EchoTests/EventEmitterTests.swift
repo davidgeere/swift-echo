@@ -547,4 +547,154 @@ struct EventEmitterTests {
         #expect(order[1] == .userStoppedSpeaking)
         #expect(order[2] == .userStartedSpeaking)
     }
+
+    // MARK: - All Events Handler Tests
+
+    @Test("Echo.when() handler for all events receives events")
+    func testEchoWhenAllEventsHandler() async throws {
+        let echo = Echo(key: "test-key")
+        let state = TestState()
+        
+        // Register handler for all events (async version - returns handler IDs)
+        let handlerIds = await echo.when { event in
+            await state.appendEvent(event.type)
+        }
+        
+        // Should have handler IDs for all event types
+        #expect(!handlerIds.isEmpty)
+        
+        // Emit various events
+        await echo.eventEmitter.emit(.userStartedSpeaking)
+        await echo.eventEmitter.emit(.assistantStartedSpeaking)
+        await echo.eventEmitter.emit(.audioLevelChanged(level: 0.5))
+        
+        // Wait for handler execution
+        try await Task.sleep(nanoseconds: 50_000_000)
+        
+        let receivedEvents = await state.receivedEvents
+        #expect(receivedEvents.contains(.userStartedSpeaking))
+        #expect(receivedEvents.contains(.assistantStartedSpeaking))
+        #expect(receivedEvents.contains(.audioLevelChanged))
+    }
+
+    @Test("Echo.when() async handler for all events receives events")
+    func testEchoWhenAllEventsAsyncHandler() async throws {
+        let echo = Echo(key: "test-key")
+        let state = TestState()
+        
+        // Register async handler for all events
+        let handlerIds = await echo.when { event in
+            await state.appendEvent(event.type)
+        }
+        
+        // Should have handler IDs for all event types
+        #expect(!handlerIds.isEmpty)
+        
+        // Emit various events
+        await echo.eventEmitter.emit(.userStoppedSpeaking)
+        await echo.eventEmitter.emit(.assistantStoppedSpeaking)
+        
+        // Wait for handler execution
+        try await Task.sleep(nanoseconds: 10_000_000)
+        
+        let receivedEvents = await state.receivedEvents
+        #expect(receivedEvents.contains(.userStoppedSpeaking))
+        #expect(receivedEvents.contains(.assistantStoppedSpeaking))
+    }
+
+    @Test("Echo.when() async handler for all events with async closure")
+    func testEchoWhenAllEventsAsyncClosure() async throws {
+        let echo = Echo(key: "test-key")
+        let state = TestState()
+        
+        // Register async handler with async closure
+        let handlerIds = await echo.when { event in
+            await state.appendEvent(event.type)
+            // Simulate async work
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
+        
+        #expect(!handlerIds.isEmpty)
+        
+        await echo.eventEmitter.emit(.turnChanged(speaker: .user))
+        
+        // Wait for handler execution
+        try await Task.sleep(nanoseconds: 10_000_000)
+        
+        let receivedEvents = await state.receivedEvents
+        #expect(receivedEvents.contains(.turnChanged))
+    }
+
+    @Test("Echo.events stream receives all events")
+    func testEchoEventsStream() async throws {
+        let echo = Echo(key: "test-key")
+        let state = TestState()
+        
+        // Consume events from stream
+        Task {
+            for await event in echo.events {
+                await state.appendEvent(event.type)
+                
+                // Break after receiving a few events
+                let count = await state.receivedEvents.count
+                if count >= 3 {
+                    break
+                }
+            }
+        }
+        
+        // Wait for stream to be ready
+        try await Task.sleep(nanoseconds: 10_000_000)
+        
+        // Emit events
+        await echo.eventEmitter.emit(.userStartedSpeaking)
+        await echo.eventEmitter.emit(.assistantStartedSpeaking)
+        await echo.eventEmitter.emit(.audioLevelChanged(level: 0.7))
+        
+        // Wait for stream processing
+        try await Task.sleep(nanoseconds: 50_000_000)
+        
+        let receivedEvents = await state.receivedEvents
+        #expect(receivedEvents.count >= 3)
+        #expect(receivedEvents.contains(.userStartedSpeaking))
+        #expect(receivedEvents.contains(.assistantStartedSpeaking))
+        #expect(receivedEvents.contains(.audioLevelChanged))
+    }
+
+    @Test("Echo.events stream can break out of loop")
+    func testEchoEventsStreamCanBreak() async throws {
+        let echo = Echo(key: "test-key")
+        let state = TestState()
+        
+        // Consume events from stream with break condition
+        Task {
+            for await event in echo.events {
+                await state.appendEvent(event.type)
+                
+                // Break on specific event
+                if case .assistantStoppedSpeaking = event {
+                    break
+                }
+            }
+        }
+        
+        // Wait for stream to be ready
+        try await Task.sleep(nanoseconds: 10_000_000)
+        
+        // Emit events
+        await echo.eventEmitter.emit(.userStartedSpeaking)
+        await echo.eventEmitter.emit(.assistantStartedSpeaking)
+        await echo.eventEmitter.emit(.assistantStoppedSpeaking)
+        await echo.eventEmitter.emit(.userStoppedSpeaking) // This should not be received
+        
+        // Wait for stream processing
+        try await Task.sleep(nanoseconds: 50_000_000)
+        
+        let receivedEvents = await state.receivedEvents
+        #expect(receivedEvents.contains(.userStartedSpeaking))
+        #expect(receivedEvents.contains(.assistantStartedSpeaking))
+        #expect(receivedEvents.contains(.assistantStoppedSpeaking))
+        // Should not contain userStoppedSpeaking because we broke before it
+        #expect(!receivedEvents.contains(.userStoppedSpeaking))
+    }
 }

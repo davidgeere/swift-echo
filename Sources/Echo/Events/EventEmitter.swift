@@ -38,6 +38,8 @@ public actor EventEmitter {
 
     deinit {
         eventContinuation?.finish()
+        // Clear all handlers to break potential retain cycles
+        handlers.removeAll()
     }
 
     // MARK: - Handler Registration
