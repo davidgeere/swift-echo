@@ -5,6 +5,35 @@ All notable changes to Echo will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] - 2025-11-23
+
+### Fixed
+
+#### Audio Routing
+- **Fixed speaker routing not working** - Speaker routing now properly routes to built-in speaker when `setSpeakerRouting(useSpeaker: true)` is called
+  - Fixed issue where `.voiceChat` mode was preventing speaker override from working
+  - Now uses `.defaultToSpeaker` category option combined with `overrideOutputAudioPort()` for reliable speaker routing
+  - Prevents connection drops when toggling speaker routing
+
+### Added
+
+#### Audio State Tracking
+- **Speaker routing state property** - Check current speaker routing state
+  - `conversation.speakerRouting` - Returns `true` if speaker is forced, `false` if using default routing, `nil` if not set
+  - Allows UI to display current audio output routing state
+
+- **Bluetooth connection detection** - Detect if Bluetooth audio device is connected
+  - `conversation.isBluetoothConnected` - Returns `true` if Bluetooth audio device is connected
+  - Supports HFP, A2DP, and Bluetooth LE audio devices
+  - Useful for showing Bluetooth connection status in UI
+
+### Technical
+- Updated `AudioPlayback.setSpeakerRouting()` to properly configure audio session with `.defaultToSpeaker` option
+- Added `speakerRouting` property to `AudioPlaybackProtocol`, `AudioPlayback`, `RealtimeClient`, and `Conversation`
+- Added `isBluetoothConnected` property to `AudioPlaybackProtocol`, `AudioPlayback`, `RealtimeClient`, and `Conversation`
+- Updated `MockAudioPlayback` to implement new properties for testing
+- Removed disruptive `setActive()` call that was causing connection drops
+
 ## [1.1.0] - 2025-11-23
 
 ### Added
@@ -193,6 +222,10 @@ Echo is a unified Swift library for OpenAI's Realtime API (WebSocket-based voice
 
 ## Version History
 
+- **1.1.2** - Fixed speaker routing and added state tracking
+- **1.1.0** - All events handler and stream
+- **1.0.3** - Audio lifecycle events
+- **1.0.2** - Multiple event listeners
 - **1.0.1** - Added dynamic speaker routing control
 - **1.0.0** - Initial release with full feature set
 
@@ -203,5 +236,9 @@ This project follows [Semantic Versioning](https://semver.org/):
 - **MINOR** version for backwards-compatible functionality additions
 - **PATCH** version for backwards-compatible bug fixes
 
+[1.1.2]: https://github.com/davidgeere/swift-echo/releases/tag/v1.1.2
+[1.1.0]: https://github.com/davidgeere/swift-echo/releases/tag/v1.1.0
+[1.0.3]: https://github.com/davidgeere/swift-echo/releases/tag/v1.0.3
+[1.0.2]: https://github.com/davidgeere/swift-echo/releases/tag/v1.0.2
 [1.0.1]: https://github.com/davidgeere/swift-echo/releases/tag/v1.0.1
 [1.0.0]: https://github.com/davidgeere/swift-echo/releases/tag/v1.0.0

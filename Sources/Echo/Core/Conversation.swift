@@ -735,6 +735,27 @@ public class Conversation {
 
         try await client.setSpeakerRouting(useSpeaker: useSpeaker)
     }
+    
+    /// Current speaker routing state
+    /// Returns true if speaker is forced, false if using default routing (Bluetooth/earpiece), nil if not set
+    public var speakerRouting: Bool? {
+        get async {
+            guard mode == .audio, let client = realtimeClient else {
+                return nil
+            }
+            return await client.speakerRouting
+        }
+    }
+    
+    /// Whether Bluetooth is currently connected for audio output
+    public var isBluetoothConnected: Bool {
+        get async {
+            guard mode == .audio, let client = realtimeClient else {
+                return false
+            }
+            return await client.isBluetoothConnected
+        }
+    }
 
     /// Manually ends the user's turn (for manual turn mode)
     /// - Throws: EchoError if not in audio mode

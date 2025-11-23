@@ -26,4 +26,11 @@ public protocol AudioPlaybackProtocol: Actor {
     ///                         (will use Bluetooth if connected, otherwise earpiece)
     /// - Throws: RealtimeError if audio playback is not active
     func setSpeakerRouting(useSpeaker: Bool) async throws
+    
+    /// Current speaker routing state
+    /// Returns true if speaker is forced, false if using default routing (Bluetooth/earpiece), nil if not set
+    var speakerRouting: Bool? { get }
+    
+    /// Whether Bluetooth is currently connected for audio output
+    var isBluetoothConnected: Bool { get }
 }

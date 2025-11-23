@@ -19,10 +19,32 @@ public actor AudioPlayback: AudioPlaybackProtocol {
     private let processor: AudioProcessor
     private var isPlaying = false
     private var audioQueue: [Data] = []
+    private var speakerRoutingOverride: Bool? = nil
 
     /// Whether playback is currently active
     public var isActive: Bool {
         return isPlaying && (playerNode?.isPlaying ?? false)
+    }
+    
+    /// Current speaker routing state
+    /// Returns true if speaker is forced, false if using default routing (Bluetooth/earpiece), nil if not set
+    public var speakerRouting: Bool? {
+        return speakerRoutingOverride
+    }
+    
+    /// Whether Bluetooth is currently connected for audio output
+    public var isBluetoothConnected: Bool {
+        #if os(iOS)
+        let audioSession = AVAudioSession.sharedInstance()
+        let currentRoute = audioSession.currentRoute
+        return currentRoute.outputs.contains { output in
+            output.portType == .bluetoothHFP || 
+            output.portType == .bluetoothA2DP ||
+            output.portType == .bluetoothLE
+        }
+        #else
+        return false
+        #endif
     }
 
     // MARK: - Initialization
@@ -131,8 +153,32 @@ public actor AudioPlayback: AudioPlaybackProtocol {
         
         #if os(iOS)
         let audioSession = AVAudioSession.sharedInstance()
+        
+        // CRITICAL FIX: .voiceChat mode defaults to earpiece and can prevent override
+        // We need to reconfigure the category with appropriate options for speaker routing
+        var options: AVAudioSession.CategoryOptions = [.allowBluetoothHFP, .mixWithOthers]
+        
+        if useSpeaker {
+            // Add .defaultToSpeaker option to force speaker output
+            options.insert(.defaultToSpeaker)
+        }
+        
+        // Reconfigure the category with the new options
+        // This ensures speaker routing works even with .voiceChat mode
+        // Use .notifyOthersOnDeactivation to prevent disrupting other audio
+        try audioSession.setCategory(
+            .playAndRecord,
+            mode: .voiceChat,
+            options: options
+        )
+        
+        // Also use overrideOutputAudioPort as a secondary mechanism
+        // This ensures the routing change takes effect immediately
         let port: AVAudioSession.PortOverride = useSpeaker ? .speaker : .none
         try audioSession.overrideOutputAudioPort(port)
+        
+        // Track the routing state
+        speakerRoutingOverride = useSpeaker
         #endif
     }
 

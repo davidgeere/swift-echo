@@ -10,6 +10,7 @@ import Foundation
 public actor MockAudioPlayback: AudioPlaybackProtocol {
     private var isRunning = false
     private var queue: [String] = []
+    private var speakerRoutingOverride: Bool? = nil
     
     public init() {}
     
@@ -39,6 +40,14 @@ public actor MockAudioPlayback: AudioPlaybackProtocol {
     }
     
     public func setSpeakerRouting(useSpeaker: Bool) async throws {
-        // Mock implementation - no-op for testing
+        speakerRoutingOverride = useSpeaker
+    }
+    
+    public var speakerRouting: Bool? {
+        return speakerRoutingOverride
+    }
+    
+    public var isBluetoothConnected: Bool {
+        return false // Mock always returns false
     }
 }

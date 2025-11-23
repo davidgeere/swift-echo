@@ -337,6 +337,21 @@ public actor RealtimeClient {
         
         try await playback.setSpeakerRouting(useSpeaker: useSpeaker)
     }
+    
+    /// Current speaker routing state
+    /// Returns true if speaker is forced, false if using default routing (Bluetooth/earpiece), nil if not set
+    public var speakerRouting: Bool? {
+        get async {
+            return await audioPlayback?.speakerRouting
+        }
+    }
+    
+    /// Whether Bluetooth is currently connected for audio output
+    public var isBluetoothConnected: Bool {
+        get async {
+            return await audioPlayback?.isBluetoothConnected ?? false
+        }
+    }
 
     /// Send a text message to the Realtime API
     /// - Parameter text: The text message to send
