@@ -4,12 +4,12 @@ A unified Swift library for OpenAI's Realtime API (WebSocket-based voice) and Ch
 
 [![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
 [![Platform](https://img.shields.io/badge/platform-iOS%2018%20|%20macOS%2014-blue.svg)](https://developer.apple.com)
-[![Version](https://img.shields.io/badge/version-1.1.0-brightgreen.svg)](https://github.com/davidgeere/swift-echo/releases)
+[![Version](https://img.shields.io/badge/version-1.1.2-brightgreen.svg)](https://github.com/davidgeere/swift-echo/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 ## 🚀 Latest Updates
 
-Echo v1.1.0 introduces powerful new event handling capabilities! Listen to all events at once, process events sequentially with async streams, and track audio lifecycle states. Plus multiple event listeners and dynamic speaker routing control.
+Echo v1.1.2 fixes speaker routing and adds audio state tracking! Speaker routing now works correctly, and you can check the current routing state and Bluetooth connection status. Plus all the powerful event handling capabilities from v1.1.0.
 
 [View changelog →](CHANGELOG.md)
 
@@ -30,7 +30,7 @@ Add Echo to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/davidgeere/swift-echo.git", from: "1.1.0")
+    .package(url: "https://github.com/davidgeere/swift-echo.git", from: "1.1.2")
 ]
 ```
 
@@ -81,6 +81,14 @@ try await conversation.switchMode(to: .text)
 // Control audio routing dynamically
 conversation.setSpeakerRouting(useSpeaker: true)  // Force speaker output
 conversation.setSpeakerRouting(useSpeaker: false) // Allow Bluetooth/earpiece
+
+// Check current routing state
+let routing = await conversation.speakerRouting
+// Returns: true if speaker forced, false if default routing, nil if not set
+
+// Check Bluetooth connection status
+let bluetoothConnected = await conversation.isBluetoothConnected
+// Returns: true if Bluetooth audio device is connected
 
 // Control mute state
 conversation.setMuted(true)   // Mute microphone
