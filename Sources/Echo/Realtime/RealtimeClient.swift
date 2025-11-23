@@ -238,48 +238,68 @@ public actor RealtimeClient {
 
     /// Starts audio capture and playback
     public func startAudio() async throws {
-        // Create audio capture (use factory if provided, otherwise create concrete instance)
-        let capture: any AudioCaptureProtocol
-        if let factory = audioCaptureFactory {
-            capture = await factory()
-        } else {
-            capture = AudioCapture(format: configuration.audioFormat)
-        }
+        // Emit audio starting event
+        await eventEmitter.emit(.audioStarting)
 
-        try await capture.start { [weak self] base64Audio in
-            guard let self = self else { return }
-
-            // Send audio to server
-            try? await self.send(.inputAudioBufferAppend(audio: base64Audio))
-        }
-        self.audioCapture = capture
-
-        // Monitor audio levels
-        Task {
-            let levelStream = await capture.audioLevelStream
-            for await level in levelStream {
-                await self.eventEmitter.emit(.audioLevelChanged(level: level))
+        do {
+            // Create audio capture (use factory if provided, otherwise create concrete instance)
+            let capture: any AudioCaptureProtocol
+            if let factory = audioCaptureFactory {
+                capture = await factory()
+            } else {
+                capture = AudioCapture(format: configuration.audioFormat)
             }
-        }
 
-        // Create audio playback (use factory if provided, otherwise create concrete instance)
-        let playback: any AudioPlaybackProtocol
-        if let factory = audioPlaybackFactory {
-            playback = await factory()
-        } else {
-            playback = AudioPlayback(format: configuration.audioFormat)
-        }
+            try await capture.start { [weak self] base64Audio in
+                guard let self = self else { return }
 
-        try await playback.start()
-        self.audioPlayback = playback
+                // Send audio to server
+                try? await self.send(.inputAudioBufferAppend(audio: base64Audio))
+            }
+            self.audioCapture = capture
+
+            // Monitor audio levels
+            Task {
+                let levelStream = await capture.audioLevelStream
+                for await level in levelStream {
+                    await self.eventEmitter.emit(.audioLevelChanged(level: level))
+                }
+            }
+
+            // Create audio playback (use factory if provided, otherwise create concrete instance)
+            let playback: any AudioPlaybackProtocol
+            if let factory = audioPlaybackFactory {
+                playback = await factory()
+            } else {
+                playback = AudioPlayback(format: configuration.audioFormat)
+            }
+
+            try await playback.start()
+            self.audioPlayback = playback
+
+            // Emit audio started event after both capture and playback are ready
+            await eventEmitter.emit(.audioStarted)
+        } catch {
+            // Emit audio stopped event if setup fails
+            await eventEmitter.emit(.audioStopped)
+            throw error
+        }
     }
 
     /// Stops audio capture and playback
     public func stopAudio() async {
+        // Only emit stopped event if audio was actually started
+        let wasStarted = audioCapture != nil || audioPlayback != nil
+
         await audioCapture?.stop()
         await audioPlayback?.stop()
         audioCapture = nil
         audioPlayback = nil
+
+        // Emit audio stopped event if audio was started
+        if wasStarted {
+            await eventEmitter.emit(.audioStopped)
+        }
     }
 
     /// Mutes or unmutes audio input

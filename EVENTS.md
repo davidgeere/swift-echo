@@ -387,6 +387,103 @@ echo.when(.audioStatusChanged) { event in
 
 ---
 
+### `.audioStarting`
+
+**When:** Audio system setup has begun (emitted at the start of `startAudio()`).
+
+**Event Value:** None (no associated data)
+
+**Use Case:** Show UI feedback that audio is being initialized (e.g., "Connecting audio...", spinner, etc.). This event is emitted before any audio capture or playback setup begins, allowing UI to provide immediate feedback during the connection period.
+
+**Note:** This event is distinct from `connectionStatusChanged` which tracks network connection (WebSocket/HTTP). This tracks the audio system lifecycle.
+
+```swift
+echo.when(.audioStarting) { event in
+    print("Audio system is starting...")
+    // Show loading indicator
+    // Update UI: "Connecting audio..."
+    // Disable microphone button until audioStarted
+}
+```
+
+---
+
+### `.audioStarted`
+
+**When:** Audio capture and playback are fully ready and operational.
+
+**Event Value:** None (no associated data)
+
+**Use Case:** Enable microphone input, show that audio is ready, update UI to indicate the system is ready for conversation. This is emitted after both audio capture and playback have been successfully started.
+
+```swift
+echo.when(.audioStarted) { event in
+    print("Audio system is ready!")
+    // Hide loading indicator
+    // Update UI: "Ready to speak"
+    // Enable microphone button
+    // Show audio level visualization
+}
+```
+
+---
+
+### `.audioStopped`
+
+**When:** Audio system has stopped (either explicitly stopped or failed during setup).
+
+**Event Value:** None (no associated data)
+
+**Use Case:** Disable microphone input, show that audio is no longer available, clean up UI state. This event is emitted when:
+- Audio is explicitly stopped via `stopAudio()` or `disconnect()`
+- Audio setup fails (permission denied, format error, etc.)
+
+**Note:** This event is distinct from `muted` state (controlled via `setMuted()`). `audioStopped` indicates the audio system is no longer running, while `muted` indicates audio is running but input is disabled.
+
+```swift
+echo.when(.audioStopped) { event in
+    print("Audio system has stopped")
+    // Hide audio level visualization
+    // Update UI: "Audio disconnected"
+    // Disable microphone button
+    // Show reconnection option if needed
+}
+```
+
+**Example: Tracking Audio Lifecycle**
+
+```swift
+// Track the full audio lifecycle during conversation startup
+var audioState: String = "disconnected"
+
+echo.when(.audioStarting) { _ in
+    audioState = "starting"
+    print("Audio: Starting...")
+    // Show: "Connecting audio..."
+}
+
+echo.when(.audioStarted) { _ in
+    audioState = "started"
+    print("Audio: Ready!")
+    // Show: "Ready to speak"
+}
+
+echo.when(.audioStopped) { _ in
+    audioState = "stopped"
+    print("Audio: Stopped")
+    // Show: "Audio disconnected"
+}
+
+// Start conversation - events will fire in sequence
+let conv = try await echo.startConversation(mode: .audio)
+// Expected sequence:
+// 1. connectionStatusChanged(isConnected: true) - WebSocket connected
+// 2. audioStarting - Audio setup begins
+// 3. audioStarted - Audio ready
+```
+
+---
+
 ## Turn Events
 
 ### `.turnChanged`

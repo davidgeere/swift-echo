@@ -61,6 +61,15 @@ public enum EchoEvent: Sendable {
     /// - Parameter status: The new audio status
     case audioStatusChanged(status: AudioStatus)
 
+    /// Audio system is starting (setup begins)
+    case audioStarting
+
+    /// Audio system has started (capture and playback ready)
+    case audioStarted
+
+    /// Audio system has stopped
+    case audioStopped
+
     // MARK: - Turn Events
 
     /// Speaking turn changed between user and assistant
@@ -160,6 +169,12 @@ public enum EchoEvent: Sendable {
             return .audioLevelChanged
         case .audioStatusChanged:
             return .audioStatusChanged
+        case .audioStarting:
+            return .audioStarting
+        case .audioStarted:
+            return .audioStarted
+        case .audioStopped:
+            return .audioStopped
         case .turnChanged:
             return .turnChanged
         case .turnEnded:

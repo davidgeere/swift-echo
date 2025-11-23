@@ -48,6 +48,15 @@ public enum EventType: String, Sendable, CaseIterable {
     /// Audio status changed (listening, speaking, processing, idle)
     case audioStatusChanged
 
+    /// Audio system is starting (setup begins)
+    case audioStarting
+
+    /// Audio system has started (capture and playback ready)
+    case audioStarted
+
+    /// Audio system has stopped
+    case audioStopped
+
     // MARK: - Turn Events
 
     /// Speaking turn changed between user and assistant

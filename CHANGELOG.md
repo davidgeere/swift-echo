@@ -5,6 +5,34 @@ All notable changes to Echo will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2025-01-27
+
+### Added
+
+#### Audio Lifecycle Events
+- **Audio lifecycle event tracking** - New events for tracking audio system startup and shutdown
+  - `.audioStarting` - Emitted when audio setup begins (before capture/playback initialization)
+  - `.audioStarted` - Emitted when audio capture and playback are fully ready
+  - `.audioStopped` - Emitted when audio stops or fails during setup
+  - Allows UI to show progress states during conversation startup (e.g., "Connecting audio...", "Ready to speak")
+  - Distinct from `connectionStatusChanged` (network connection) and `muted` state (runtime control)
+  - Events are emitted in sequence: `audioStarting` → `audioStarted` → `audioStopped`
+
+#### Testing
+- **Audio lifecycle event tests** - Comprehensive test coverage for new events
+  - 6 tests covering all audio lifecycle scenarios
+  - Tests for successful startup sequence
+  - Tests for failure scenarios
+  - Tests for explicit stop behavior
+  - Tests for edge cases (stopping without starting)
+
+### Technical
+- Added `audioStarting`, `audioStarted`, `audioStopped` to `EventType` enum
+- Added corresponding cases to `EchoEvent` enum with type mapping
+- Updated `RealtimeClient.startAudio()` to emit lifecycle events
+- Updated `RealtimeClient.stopAudio()` to emit `audioStopped` when appropriate
+- Updated `EVENTS.md` with documentation and examples for new events
+
 ## [1.0.2] - 2025-11-23
 
 ### Added
