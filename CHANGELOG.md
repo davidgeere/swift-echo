@@ -5,6 +5,23 @@ All notable changes to Echo will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2025-11-23
+
+### Added
+
+#### Audio Features
+- **Dynamic speaker routing** - Runtime control of audio output routing
+  - `conversation.setSpeakerRouting(useSpeaker: Bool)` method to switch between speaker and earpiece
+  - When `useSpeaker: true`, forces audio to built-in speaker (bypasses Bluetooth)
+  - When `useSpeaker: false`, allows system to choose route (uses Bluetooth if connected, otherwise earpiece)
+  - Can be changed at any time during an active conversation
+  - Follows the same pattern as `setMuted()` for consistency
+
+### Technical
+- Added `setSpeakerRouting()` method to `AudioPlaybackProtocol`, `AudioPlayback`, `RealtimeClient`, and `Conversation`
+- Uses `AVAudioSession.overrideOutputAudioPort()` for runtime routing changes
+- Properly handles Bluetooth device routing (respects `.allowBluetoothHFP` option)
+
 ## [1.0.0] - 2024-11-15
 
 ### 🎉 Initial Release
@@ -85,6 +102,7 @@ Echo is a unified Swift library for OpenAI's Realtime API (WebSocket-based voice
 
 ## Version History
 
+- **1.0.1** - Added dynamic speaker routing control
 - **1.0.0** - Initial release with full feature set
 
 ## Versioning
@@ -94,4 +112,5 @@ This project follows [Semantic Versioning](https://semver.org/):
 - **MINOR** version for backwards-compatible functionality additions
 - **PATCH** version for backwards-compatible bug fixes
 
+[1.0.1]: https://github.com/davidgeere/swift-echo/releases/tag/v1.0.1
 [1.0.0]: https://github.com/davidgeere/swift-echo/releases/tag/v1.0.0

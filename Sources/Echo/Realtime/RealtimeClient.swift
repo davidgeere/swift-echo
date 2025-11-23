@@ -301,6 +301,23 @@ public actor RealtimeClient {
         }
     }
 
+    /// Sets the audio output routing
+    /// - Parameter useSpeaker: If true, routes to built-in speaker (bypasses Bluetooth);
+    ///                         if false, removes override and allows system to choose route
+    ///                         (will use Bluetooth if connected, otherwise earpiece)
+    /// - Throws: RealtimeError if audio playback is not active
+    public func setSpeakerRouting(useSpeaker: Bool) async throws {
+        guard let playback = audioPlayback else {
+            throw RealtimeError.audioPlaybackFailed(
+                NSError(domain: "RealtimeClient", code: -2, userInfo: [
+                    NSLocalizedDescriptionKey: "Audio playback is not active"
+                ])
+            )
+        }
+        
+        try await playback.setSpeakerRouting(useSpeaker: useSpeaker)
+    }
+
     /// Send a text message to the Realtime API
     /// - Parameter text: The text message to send
     /// - Throws: RealtimeError if send fails

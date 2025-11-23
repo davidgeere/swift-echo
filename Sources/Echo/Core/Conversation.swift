@@ -719,6 +719,23 @@ public class Conversation {
         try await client.setMuted(muted)
     }
 
+    /// Sets the audio output routing
+    /// - Parameter useSpeaker: If true, routes to built-in speaker (bypasses Bluetooth);
+    ///                         if false, removes override and allows system to choose route
+    ///                         (will use Bluetooth if connected, otherwise earpiece)
+    /// - Throws: EchoError if not in audio mode or audio is not active
+    public func setSpeakerRouting(useSpeaker: Bool) async throws {
+        guard mode == .audio else {
+            throw EchoError.invalidMode("Cannot set speaker routing in text mode")
+        }
+
+        guard let client = realtimeClient else {
+            throw EchoError.clientNotInitialized("Realtime client not initialized")
+        }
+
+        try await client.setSpeakerRouting(useSpeaker: useSpeaker)
+    }
+
     /// Manually ends the user's turn (for manual turn mode)
     /// - Throws: EchoError if not in audio mode
     public func endUserTurn() async throws {

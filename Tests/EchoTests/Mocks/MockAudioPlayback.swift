@@ -37,4 +37,8 @@ public actor MockAudioPlayback: AudioPlaybackProtocol {
     public func interrupt() async {
         queue.removeAll()
     }
+    
+    public func setSpeakerRouting(useSpeaker: Bool) async throws {
+        // Mock implementation - no-op for testing
+    }
 }

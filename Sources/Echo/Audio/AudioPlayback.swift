@@ -115,6 +115,27 @@ public actor AudioPlayback: AudioPlaybackProtocol {
         playerNode?.play()
     }
 
+    /// Sets the audio output routing
+    /// - Parameter useSpeaker: If true, routes to built-in speaker (bypasses Bluetooth);
+    ///                         if false, removes override and allows system to choose route
+    ///                         (will use Bluetooth if connected, otherwise earpiece)
+    /// - Throws: RealtimeError if audio playback is not active
+    public func setSpeakerRouting(useSpeaker: Bool) async throws {
+        guard isPlaying else {
+            throw RealtimeError.audioPlaybackFailed(
+                NSError(domain: "AudioPlayback", code: -3, userInfo: [
+                    NSLocalizedDescriptionKey: "Audio playback is not active"
+                ])
+            )
+        }
+        
+        #if os(iOS)
+        let audioSession = AVAudioSession.sharedInstance()
+        let port: AVAudioSession.PortOverride = useSpeaker ? .speaker : .none
+        try audioSession.overrideOutputAudioPort(port)
+        #endif
+    }
+
     // MARK: - Audio Enqueueing
 
     /// Enqueues base64-encoded audio data for playback

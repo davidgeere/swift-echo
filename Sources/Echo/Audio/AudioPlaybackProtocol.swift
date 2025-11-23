@@ -19,4 +19,11 @@ public protocol AudioPlaybackProtocol: Actor {
     
     /// Interrupts current playback (clears queue)
     func interrupt() async
+    
+    /// Sets the audio output routing
+    /// - Parameter useSpeaker: If true, routes to built-in speaker (bypasses Bluetooth);
+    ///                         if false, removes override and allows system to choose route
+    ///                         (will use Bluetooth if connected, otherwise earpiece)
+    /// - Throws: RealtimeError if audio playback is not active
+    func setSpeakerRouting(useSpeaker: Bool) async throws
 }

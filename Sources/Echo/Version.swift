@@ -11,7 +11,7 @@ import Foundation
 /// Echo library version information
 public enum EchoVersion {
     /// Current version of the Echo library
-    public static let current = Version(major: 1, minor: 0, patch: 0)
+    public static let current = Version(major: 1, minor: 0, patch: 1)
     
     /// Version string (e.g., "1.0.0")
     public static var string: String {
@@ -25,7 +25,7 @@ public enum EchoVersion {
     
     /// Build information
     public static let build = BuildInfo(
-        date: "2024-11-15",
+        date: "2025-11-23",
         commit: "main"
     )
 }
@@ -81,6 +81,19 @@ public struct BuildInfo: Sendable {
 extension EchoVersion {
     /// Version history with release notes
     public static let history: [(version: Version, date: String, notes: String)] = [
+        (
+            version: Version(major: 1, minor: 0, patch: 1),
+            date: "2025-11-23",
+            notes: """
+            🔊 Dynamic Speaker Routing
+            
+            Audio Features:
+            • Runtime control of audio output routing
+            • Switch between speaker and earpiece at any time
+            • Proper Bluetooth device handling
+            • Consistent API pattern with setMuted()
+            """
+        ),
         (
             version: Version(major: 1, minor: 0, patch: 0),
             date: "2024-11-15",
