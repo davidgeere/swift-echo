@@ -4,12 +4,12 @@ A unified Swift library for OpenAI's Realtime API (WebSocket-based voice) and Ch
 
 [![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
 [![Platform](https://img.shields.io/badge/platform-iOS%2018%20|%20macOS%2014-blue.svg)](https://developer.apple.com)
-[![Version](https://img.shields.io/badge/version-1.0.0-brightgreen.svg)](https://github.com/davidgeere/swift-echo/releases)
+[![Version](https://img.shields.io/badge/version-1.1.0-brightgreen.svg)](https://github.com/davidgeere/swift-echo/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-## 🚀 Initial Release
+## 🚀 Latest Updates
 
-Echo v1.0.0 brings unified voice and text conversations to Swift! This is the first production-ready release of Echo, providing seamless integration with OpenAI's Realtime and Chat APIs.
+Echo v1.1.0 introduces powerful new event handling capabilities! Listen to all events at once, process events sequentially with async streams, and track audio lifecycle states. Plus multiple event listeners and dynamic speaker routing control.
 
 [View changelog →](CHANGELOG.md)
 
@@ -30,7 +30,7 @@ Add Echo to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/davidgeere/swift-echo.git", from: "1.0.0")
+    .package(url: "https://github.com/davidgeere/swift-echo.git", from: "1.1.0")
 ]
 ```
 
@@ -77,6 +77,14 @@ let conversation = try await echo.startConversation(mode: .audio)
 
 // Switch to text anytime
 try await conversation.switchMode(to: .text)
+
+// Control audio routing dynamically
+conversation.setSpeakerRouting(useSpeaker: true)  // Force speaker output
+conversation.setSpeakerRouting(useSpeaker: false) // Allow Bluetooth/earpiece
+
+// Control mute state
+conversation.setMuted(true)   // Mute microphone
+conversation.setMuted(false)  // Unmute microphone
 ```
 
 ## 🧮 Embeddings API
@@ -254,6 +262,8 @@ try await conversation.send("What's the weather in San Francisco?")
 
 Monitor all events with the intuitive `when` syntax:
 
+### Single Event Listeners
+
 ```swift
 // Listen for specific events
 echo.when(.messageFinalized) { event in
@@ -274,6 +284,95 @@ echo.when(.userTranscriptionCompleted) { event in
     if case .userTranscriptionCompleted(let transcript) = event {
         print("User said: \(transcript)")
     }
+}
+```
+
+### Multiple Event Listeners
+
+Listen to multiple events with a single handler:
+
+```swift
+// Array syntax
+echo.when([.userStartedSpeaking, .assistantStartedSpeaking]) { event in
+    switch event {
+    case .userStartedSpeaking:
+        print("🎙️ User is speaking...")
+    case .assistantStartedSpeaking:
+        print("🤖 Assistant is responding...")
+    default:
+        break
+    }
+}
+
+// Variadic syntax (equivalent)
+echo.when(.userStartedSpeaking, .assistantStartedSpeaking) { event in
+    // Same handler for both events
+}
+```
+
+### All Events Handler
+
+Listen to every event emitted by Echo:
+
+```swift
+// Non-async handler (fire-and-forget)
+echo.when { event in
+    print("Event received: \(event)")
+    // Useful for logging, analytics, or global monitoring
+}
+
+// Async handler (returns handler IDs for removal)
+let handlerIds = await echo.when { event in
+    // Process all events
+    if case .messageFinalized(let message) = event {
+        print("New message: \(message.text)")
+    }
+}
+```
+
+### Events Stream
+
+Process events sequentially with async streams:
+
+```swift
+// Process events one at a time
+Task {
+    for await event in echo.events {
+        switch event {
+        case .audioStarting:
+            print("Audio system starting...")
+        case .audioStarted:
+            print("Audio ready!")
+        case .audioStopped:
+            print("Audio stopped")
+            break // Exit loop when done
+        case .messageFinalized(let message):
+            print("Message: \(message.text)")
+        default:
+            break
+        }
+    }
+}
+```
+
+### Audio Lifecycle Events
+
+Track audio system startup and shutdown:
+
+```swift
+echo.when(.audioStarting) { _ in
+    print("Connecting audio...")
+    // Show "Connecting..." UI state
+}
+
+echo.when(.audioStarted) { _ in
+    print("Ready to speak!")
+    // Show "Ready" UI state
+}
+
+echo.when(.audioStopped) { _ in
+    print("Audio disconnected")
+    // Show "Disconnected" UI state
 }
 ```
 
