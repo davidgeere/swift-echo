@@ -3,6 +3,9 @@
 // Main WebSocket client for the Realtime API with MANDATORY model validation
 
 import Foundation
+#if os(iOS)
+import AVFoundation
+#endif
 
 /// Main client for interacting with the Realtime API via WebSocket
 public actor RealtimeClient {
@@ -277,6 +280,13 @@ public actor RealtimeClient {
             try await playback.start()
             self.audioPlayback = playback
 
+            // Set up route change observer for audio output changes
+            #if os(iOS)
+            Task { [weak self] in
+                await self?.observeAudioRouteChanges()
+            }
+            #endif
+
             // Emit audio started event after both capture and playback are ready
             await eventEmitter.emit(.audioStarted)
         } catch {
@@ -321,12 +331,10 @@ public actor RealtimeClient {
         }
     }
 
-    /// Sets the audio output routing
-    /// - Parameter useSpeaker: If true, routes to built-in speaker (bypasses Bluetooth);
-    ///                         if false, removes override and allows system to choose route
-    ///                         (will use Bluetooth if connected, otherwise earpiece)
+    /// Sets the audio output device
+    /// - Parameter device: The audio output device to use
     /// - Throws: RealtimeError if audio playback is not active
-    public func setSpeakerRouting(useSpeaker: Bool) async throws {
+    public func setAudioOutput(device: AudioOutputDeviceType) async throws {
         guard let playback = audioPlayback else {
             throw RealtimeError.audioPlaybackFailed(
                 NSError(domain: "RealtimeClient", code: -2, userInfo: [
@@ -335,21 +343,24 @@ public actor RealtimeClient {
             )
         }
         
-        try await playback.setSpeakerRouting(useSpeaker: useSpeaker)
+        try await playback.setAudioOutput(device: device)
+        
+        // Emit event for output change
+        let currentDevice = await playback.currentAudioOutput
+        await eventEmitter.emit(.audioOutputChanged(device: currentDevice))
     }
     
-    /// Current speaker routing state
-    /// Returns true if speaker is forced, false if using default routing (Bluetooth/earpiece), nil if not set
-    public var speakerRouting: Bool? {
+    /// List of available audio output devices
+    public var availableAudioOutputDevices: [AudioOutputDeviceType] {
         get async {
-            return await audioPlayback?.speakerRouting
+            return await audioPlayback?.availableAudioOutputDevices ?? []
         }
     }
     
-    /// Whether Bluetooth is currently connected for audio output
-    public var isBluetoothConnected: Bool {
+    /// Current active audio output device
+    public var currentAudioOutput: AudioOutputDeviceType {
         get async {
-            return await audioPlayback?.isBluetoothConnected ?? false
+            return await audioPlayback?.currentAudioOutput ?? .systemDefault
         }
     }
 
@@ -668,6 +679,31 @@ public actor RealtimeClient {
             return result
         }
     }
+    
+    /// Observes audio route changes and emits events when output device changes
+    #if os(iOS)
+    private func observeAudioRouteChanges() async {
+        let notificationCenter = NotificationCenter.default
+        
+        // Set up observer for route changes
+        notificationCenter.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] notification in
+            Task { [weak self] in
+                guard let self = self,
+                      let playback = await self.audioPlayback else { return }
+                
+                // Get current output device
+                let currentDevice = await playback.currentAudioOutput
+                
+                // Emit event for output change
+                await self.eventEmitter.emit(.audioOutputChanged(device: currentDevice))
+            }
+        }
+    }
+    #endif
 }
 
 // MARK: - Configuration

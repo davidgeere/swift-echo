@@ -70,6 +70,10 @@ public enum EchoEvent: Sendable {
     /// Audio system has stopped
     case audioStopped
 
+    /// Audio output device changed
+    /// - Parameter device: The new audio output device
+    case audioOutputChanged(device: AudioOutputDeviceType)
+
     // MARK: - Turn Events
 
     /// Speaking turn changed between user and assistant
@@ -175,6 +179,8 @@ public enum EchoEvent: Sendable {
             return .audioStarted
         case .audioStopped:
             return .audioStopped
+        case .audioOutputChanged:
+            return .audioOutputChanged
         case .turnChanged:
             return .turnChanged
         case .turnEnded:

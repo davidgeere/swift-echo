@@ -11,7 +11,7 @@ import Foundation
 /// Echo library version information
 public enum EchoVersion {
     /// Current version of the Echo library
-    public static let current = Version(major: 1, minor: 1, patch: 2)
+    public static let current = Version(major: 1, minor: 2, patch: 0)
     
     /// Version string (e.g., "1.0.0")
     public static var string: String {
@@ -81,6 +81,31 @@ public struct BuildInfo: Sendable {
 extension EchoVersion {
     /// Version history with release notes
     public static let history: [(version: Version, date: String, notes: String)] = [
+        (
+            version: Version(major: 1, minor: 2, patch: 0),
+            date: "2025-11-23",
+            notes: """
+            🔊 Audio Output Device Selection
+            
+            Breaking Changes:
+            • Replaced setSpeakerRouting(useSpeaker: Bool) with setAudioOutput(device: AudioOutputDeviceType)
+            • Removed speakerRouting and isBluetoothConnected properties
+            • New device-based API provides better control and flexibility
+            
+            New Features:
+            • AudioOutputDeviceType enum with builtInSpeaker, builtInReceiver, bluetooth, wiredHeadphones, systemDefault
+            • availableAudioOutputDevices property to list all connected devices
+            • currentAudioOutput property to check active output device
+            • audioOutputChanged event when device changes
+            • Automatic route change detection and event emission
+            
+            Improvements:
+            • Better device type detection with device names
+            • Support for multiple Bluetooth devices
+            • More intuitive API for audio routing control
+            • Comprehensive test coverage (13 new tests)
+            """
+        ),
         (
             version: Version(major: 1, minor: 1, patch: 0),
             date: "2025-11-23",

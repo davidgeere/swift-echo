@@ -19,31 +19,79 @@ public actor AudioPlayback: AudioPlaybackProtocol {
     private let processor: AudioProcessor
     private var isPlaying = false
     private var audioQueue: [Data] = []
-    private var speakerRoutingOverride: Bool? = nil
 
     /// Whether playback is currently active
     public var isActive: Bool {
         return isPlaying && (playerNode?.isPlaying ?? false)
     }
     
-    /// Current speaker routing state
-    /// Returns true if speaker is forced, false if using default routing (Bluetooth/earpiece), nil if not set
-    public var speakerRouting: Bool? {
-        return speakerRoutingOverride
+    /// List of available audio output devices
+    public var availableAudioOutputDevices: [AudioOutputDeviceType] {
+        #if os(iOS)
+        let audioSession = AVAudioSession.sharedInstance()
+        var devices: [AudioOutputDeviceType] = []
+        
+        // Built-in devices are always available
+        devices.append(.builtInSpeaker)
+        devices.append(.builtInReceiver)
+        
+        // Check for connected Bluetooth devices
+        let availableInputs = audioSession.availableInputs ?? []
+        let currentRoute = audioSession.currentRoute
+        
+        // Get all unique Bluetooth devices from available inputs and current route
+        var bluetoothDevices: Set<String> = []
+        
+        // Check available inputs for Bluetooth devices
+        for input in availableInputs {
+            if input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE {
+                if let name = input.portName {
+                    bluetoothDevices.insert(name)
+                }
+            }
+        }
+        
+        // Check current route outputs for Bluetooth devices
+        for output in currentRoute.outputs {
+            if output.portType == .bluetoothHFP || output.portType == .bluetoothA2DP || output.portType == .bluetoothLE {
+                if let name = output.portName {
+                    bluetoothDevices.insert(name)
+                }
+            }
+        }
+        
+        // Add Bluetooth devices to list
+        for name in bluetoothDevices {
+            devices.append(.bluetooth(name: name))
+        }
+        
+        // Check for wired headphones
+        for output in currentRoute.outputs {
+            if output.portType == .headphones {
+                devices.append(.wiredHeadphones(name: output.portName))
+                break
+            }
+        }
+        
+        return devices
+        #else
+        return [.builtInSpeaker, .builtInReceiver]
+        #endif
     }
     
-    /// Whether Bluetooth is currently connected for audio output
-    public var isBluetoothConnected: Bool {
+    /// Current active audio output device
+    public var currentAudioOutput: AudioOutputDeviceType {
         #if os(iOS)
         let audioSession = AVAudioSession.sharedInstance()
         let currentRoute = audioSession.currentRoute
-        return currentRoute.outputs.contains { output in
-            output.portType == .bluetoothHFP || 
-            output.portType == .bluetoothA2DP ||
-            output.portType == .bluetoothLE
+        
+        guard let output = currentRoute.outputs.first else {
+            return .builtInSpeaker
         }
+        
+        return AudioOutputDeviceType.from(portType: output.portType, portName: output.portName)
         #else
-        return false
+        return .builtInSpeaker
         #endif
     }
 
@@ -137,12 +185,10 @@ public actor AudioPlayback: AudioPlaybackProtocol {
         playerNode?.play()
     }
 
-    /// Sets the audio output routing
-    /// - Parameter useSpeaker: If true, routes to built-in speaker (bypasses Bluetooth);
-    ///                         if false, removes override and allows system to choose route
-    ///                         (will use Bluetooth if connected, otherwise earpiece)
+    /// Sets the audio output device
+    /// - Parameter device: The audio output device to use
     /// - Throws: RealtimeError if audio playback is not active
-    public func setSpeakerRouting(useSpeaker: Bool) async throws {
+    public func setAudioOutput(device: AudioOutputDeviceType) async throws {
         guard isPlaying else {
             throw RealtimeError.audioPlaybackFailed(
                 NSError(domain: "AudioPlayback", code: -3, userInfo: [
@@ -154,31 +200,34 @@ public actor AudioPlayback: AudioPlaybackProtocol {
         #if os(iOS)
         let audioSession = AVAudioSession.sharedInstance()
         
-        // CRITICAL FIX: .voiceChat mode defaults to earpiece and can prevent override
-        // We need to reconfigure the category with appropriate options for speaker routing
         var options: AVAudioSession.CategoryOptions = [.allowBluetoothHFP, .mixWithOthers]
+        var portOverride: AVAudioSession.PortOverride = .none
         
-        if useSpeaker {
-            // Add .defaultToSpeaker option to force speaker output
+        switch device {
+        case .builtInSpeaker:
+            // Force speaker output
             options.insert(.defaultToSpeaker)
+            portOverride = .speaker
+            
+        case .builtInReceiver:
+            // Force earpiece (remove speaker override)
+            portOverride = .none
+            
+        case .bluetooth, .wiredHeadphones, .systemDefault:
+            // Allow system to route to Bluetooth/wired/earpiece
+            // Remove speaker override to allow default routing
+            portOverride = .none
         }
         
         // Reconfigure the category with the new options
-        // This ensures speaker routing works even with .voiceChat mode
-        // Use .notifyOthersOnDeactivation to prevent disrupting other audio
         try audioSession.setCategory(
             .playAndRecord,
             mode: .voiceChat,
             options: options
         )
         
-        // Also use overrideOutputAudioPort as a secondary mechanism
-        // This ensures the routing change takes effect immediately
-        let port: AVAudioSession.PortOverride = useSpeaker ? .speaker : .none
-        try audioSession.overrideOutputAudioPort(port)
-        
-        // Track the routing state
-        speakerRoutingOverride = useSpeaker
+        // Apply port override
+        try audioSession.overrideOutputAudioPort(portOverride)
         #endif
     }
 

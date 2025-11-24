@@ -5,6 +5,59 @@ All notable changes to Echo will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2025-11-23
+
+### Changed
+
+#### Audio Output Device Selection API
+- **Replaced speaker routing API** - New device-based audio output selection system
+  - Removed `setSpeakerRouting(useSpeaker: Bool)` method
+  - Removed `speakerRouting: Bool?` property
+  - Removed `isBluetoothConnected: Bool` property
+  - Added `setAudioOutput(device: AudioOutputDeviceType)` method for device selection
+  - More intuitive and flexible API for controlling audio output
+
+### Added
+
+#### Audio Output Device Types
+- **AudioOutputDeviceType enum** - Comprehensive device type system
+  - `.builtInSpeaker` - Force built-in speaker output
+  - `.builtInReceiver` - Force earpiece/receiver output
+  - `.bluetooth(name: String?)` - Bluetooth audio device (with optional device name)
+  - `.wiredHeadphones(name: String?)` - Wired headphones (with optional device name)
+  - `.systemDefault` - Let system choose the default route
+  - Includes `description` property for UI display
+  - Includes `isBluetooth` computed property
+
+#### Audio Output State Management
+- **Available devices list** - Query all available audio output devices
+  - `conversation.availableAudioOutputDevices` - Returns array of all connected devices
+  - Includes device names when available (e.g., "AirPods Pro", "External Speaker")
+  - Always includes built-in speaker and receiver
+  - Lists all connected Bluetooth devices by name
+
+- **Current output tracking** - Check active audio output device
+  - `conversation.currentAudioOutput` - Returns currently active output device
+  - Updates automatically when user switches devices in system
+  - Includes device name when available
+
+#### Audio Output Change Events
+- **audioOutputChanged event** - Emitted when audio output device changes
+  - `.audioOutputChanged(device: AudioOutputDeviceType)` - Fired when output changes
+  - Emitted when `setAudioOutput()` is called programmatically
+  - Emitted when user switches device via system controls
+  - Allows UI to update in real-time when output changes
+
+### Technical
+- Created `AudioOutputDeviceType.swift` enum with device type definitions
+- Updated `AudioPlayback` to implement new device-based API
+- Updated `AudioPlaybackProtocol` with new methods and properties
+- Updated `RealtimeClient` to delegate to playback and emit events
+- Updated `Conversation` to expose new API with mode validation
+- Updated `MockAudioPlayback` for testing
+- Added route change observer in `RealtimeClient` for automatic event emission
+- Added comprehensive test coverage (13 new tests in `AudioOutputDeviceTests.swift`)
+
 ## [1.1.2] - 2025-11-23
 
 ### Fixed
@@ -222,6 +275,7 @@ Echo is a unified Swift library for OpenAI's Realtime API (WebSocket-based voice
 
 ## Version History
 
+- **1.2.0** - Audio output device selection API (breaking changes)
 - **1.1.2** - Fixed speaker routing and added state tracking
 - **1.1.0** - All events handler and stream
 - **1.0.3** - Audio lifecycle events
@@ -236,6 +290,7 @@ This project follows [Semantic Versioning](https://semver.org/):
 - **MINOR** version for backwards-compatible functionality additions
 - **PATCH** version for backwards-compatible bug fixes
 
+[1.2.0]: https://github.com/davidgeere/swift-echo/releases/tag/v1.2.0
 [1.1.2]: https://github.com/davidgeere/swift-echo/releases/tag/v1.1.2
 [1.1.0]: https://github.com/davidgeere/swift-echo/releases/tag/v1.1.0
 [1.0.3]: https://github.com/davidgeere/swift-echo/releases/tag/v1.0.3

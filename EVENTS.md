@@ -7,6 +7,7 @@ Complete guide to all events emitted by Echo and how to leverage them using the 
 - [User Speech Events](#user-speech-events)
 - [Assistant Response Events](#assistant-response-events)
 - [Audio Events](#audio-events)
+  - [Audio Output Events](#audio-output-events)
 - [Turn Events](#turn-events)
 - [Tool Events](#tool-events)
 - [Message Events](#message-events)
@@ -449,6 +450,82 @@ echo.when(.audioStopped) { event in
     // Show reconnection option if needed
 }
 ```
+
+---
+
+### `.audioOutputChanged`
+
+**When:** Audio output device has changed (either programmatically or via system controls).
+
+**Event Value:**
+- `device: AudioOutputDeviceType` - The new active audio output device
+
+**AudioOutputDeviceType Values:**
+- `.builtInSpeaker` - Built-in speaker
+- `.builtInReceiver` - Earpiece/receiver
+- `.bluetooth(name: String?)` - Bluetooth device (with optional device name)
+- `.wiredHeadphones(name: String?)` - Wired headphones (with optional device name)
+- `.systemDefault` - System default route
+
+**Use Case:** Update UI to show current audio output device, display device name in UI, handle device switching.
+
+```swift
+echo.when(.audioOutputChanged) { event in
+    guard case .audioOutputChanged(let device) = event else { return }
+    
+    print("Audio output changed to: \(device.description)")
+    
+    switch device {
+    case .builtInSpeaker:
+        // Update UI: "Speaker"
+        // Show speaker icon
+        
+    case .builtInReceiver:
+        // Update UI: "Earpiece"
+        // Show earpiece icon
+        
+    case .bluetooth(let name):
+        // Update UI: name ?? "Bluetooth"
+        // Show Bluetooth icon
+        // Display device name if available
+        
+    case .wiredHeadphones(let name):
+        // Update UI: name ?? "Headphones"
+        // Show headphones icon
+        
+    case .systemDefault:
+        // Update UI: "System Default"
+        // Show default icon
+    }
+}
+```
+
+**Note:** This event is emitted:
+- When `setAudioOutput()` is called programmatically
+- When the user switches audio output via system controls (Control Center, Settings, etc.)
+- Allows UI to stay in sync with actual audio routing
+
+**Example: Tracking Audio Output**
+
+```swift
+var currentOutput: AudioOutputDeviceType = .systemDefault
+
+echo.when(.audioOutputChanged) { event in
+    guard case .audioOutputChanged(let device) = event else { return }
+    currentOutput = device
+    
+    // Update UI with current device
+    updateAudioOutputUI(device: device)
+}
+
+// Programmatically change output
+try await conversation.setAudioOutput(device: .bluetooth)
+
+// Event will fire automatically
+// UI will update to show Bluetooth device
+```
+
+---
 
 **Example: Tracking Audio Lifecycle**
 

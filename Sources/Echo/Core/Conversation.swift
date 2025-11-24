@@ -719,41 +719,38 @@ public class Conversation {
         try await client.setMuted(muted)
     }
 
-    /// Sets the audio output routing
-    /// - Parameter useSpeaker: If true, routes to built-in speaker (bypasses Bluetooth);
-    ///                         if false, removes override and allows system to choose route
-    ///                         (will use Bluetooth if connected, otherwise earpiece)
+    /// Sets the audio output device
+    /// - Parameter device: The audio output device to use
     /// - Throws: EchoError if not in audio mode or audio is not active
-    public func setSpeakerRouting(useSpeaker: Bool) async throws {
+    public func setAudioOutput(device: AudioOutputDeviceType) async throws {
         guard mode == .audio else {
-            throw EchoError.invalidMode("Cannot set speaker routing in text mode")
+            throw EchoError.invalidMode("Cannot set audio output in text mode")
         }
 
         guard let client = realtimeClient else {
             throw EchoError.clientNotInitialized("Realtime client not initialized")
         }
 
-        try await client.setSpeakerRouting(useSpeaker: useSpeaker)
+        try await client.setAudioOutput(device: device)
     }
     
-    /// Current speaker routing state
-    /// Returns true if speaker is forced, false if using default routing (Bluetooth/earpiece), nil if not set
-    public var speakerRouting: Bool? {
+    /// List of available audio output devices
+    public var availableAudioOutputDevices: [AudioOutputDeviceType] {
         get async {
             guard mode == .audio, let client = realtimeClient else {
-                return nil
+                return []
             }
-            return await client.speakerRouting
+            return await client.availableAudioOutputDevices
         }
     }
     
-    /// Whether Bluetooth is currently connected for audio output
-    public var isBluetoothConnected: Bool {
+    /// Current active audio output device
+    public var currentAudioOutput: AudioOutputDeviceType {
         get async {
             guard mode == .audio, let client = realtimeClient else {
-                return false
+                return .systemDefault
             }
-            return await client.isBluetoothConnected
+            return await client.currentAudioOutput
         }
     }
 

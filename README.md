@@ -4,12 +4,12 @@ A unified Swift library for OpenAI's Realtime API (WebSocket-based voice) and Ch
 
 [![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
 [![Platform](https://img.shields.io/badge/platform-iOS%2018%20|%20macOS%2014-blue.svg)](https://developer.apple.com)
-[![Version](https://img.shields.io/badge/version-1.1.2-brightgreen.svg)](https://github.com/davidgeere/swift-echo/releases)
+[![Version](https://img.shields.io/badge/version-1.2.0-brightgreen.svg)](https://github.com/davidgeere/swift-echo/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 ## 🚀 Latest Updates
 
-Echo v1.1.2 fixes speaker routing and adds audio state tracking! Speaker routing now works correctly, and you can check the current routing state and Bluetooth connection status. Plus all the powerful event handling capabilities from v1.1.0.
+Echo v1.2.0 introduces a new audio output device selection API! Choose between speaker, earpiece, Bluetooth, or wired headphones with a clean, type-safe interface. List available devices, track the current output, and listen for changes. This replaces the previous boolean-based speaker routing API.
 
 [View changelog →](CHANGELOG.md)
 
@@ -30,7 +30,7 @@ Add Echo to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/davidgeere/swift-echo.git", from: "1.1.2")
+    .package(url: "https://github.com/davidgeere/swift-echo.git", from: "1.2.0")
 ]
 ```
 
@@ -78,17 +78,27 @@ let conversation = try await echo.startConversation(mode: .audio)
 // Switch to text anytime
 try await conversation.switchMode(to: .text)
 
-// Control audio routing dynamically
-conversation.setSpeakerRouting(useSpeaker: true)  // Force speaker output
-conversation.setSpeakerRouting(useSpeaker: false) // Allow Bluetooth/earpiece
+// List available audio output devices
+let devices = await conversation.availableAudioOutputDevices
+// Returns: [.builtInSpeaker, .builtInReceiver, .bluetooth(name: "AirPods Pro"), .bluetooth(name: "External Speaker")]
 
-// Check current routing state
-let routing = await conversation.speakerRouting
-// Returns: true if speaker forced, false if default routing, nil if not set
+// Get current active output device
+let current = await conversation.currentAudioOutput
+// Returns: .bluetooth(name: "AirPods Pro") or .builtInSpeaker, etc.
 
-// Check Bluetooth connection status
-let bluetoothConnected = await conversation.isBluetoothConnected
-// Returns: true if Bluetooth audio device is connected
+// Set audio output device
+try await conversation.setAudioOutput(device: .builtInSpeaker)  // Force speaker
+try await conversation.setAudioOutput(device: .builtInReceiver)  // Force earpiece
+try await conversation.setAudioOutput(device: .bluetooth)       // Allow Bluetooth (system chooses active device)
+try await conversation.setAudioOutput(device: .wiredHeadphones) // Allow wired headphones
+try await conversation.setAudioOutput(device: .systemDefault)    // Let system choose
+
+// Listen for audio output changes
+echo.when(.audioOutputChanged) { event in
+    if case .audioOutputChanged(let device) = event {
+        print("Audio output changed to: \(device.description)")
+    }
+}
 
 // Control mute state
 conversation.setMuted(true)   // Mute microphone
@@ -291,6 +301,12 @@ echo.when(.assistantStartedSpeaking) { _ in
 echo.when(.userTranscriptionCompleted) { event in
     if case .userTranscriptionCompleted(let transcript) = event {
         print("User said: \(transcript)")
+    }
+}
+
+echo.when(.audioOutputChanged) { event in
+    if case .audioOutputChanged(let device) = event {
+        print("Audio output changed to: \(device.description)")
     }
 }
 ```

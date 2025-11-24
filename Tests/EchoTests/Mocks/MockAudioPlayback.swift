@@ -10,7 +10,7 @@ import Foundation
 public actor MockAudioPlayback: AudioPlaybackProtocol {
     private var isRunning = false
     private var queue: [String] = []
-    private var speakerRoutingOverride: Bool? = nil
+    private var currentOutput: AudioOutputDeviceType = .systemDefault
     
     public init() {}
     
@@ -39,15 +39,22 @@ public actor MockAudioPlayback: AudioPlaybackProtocol {
         queue.removeAll()
     }
     
-    public func setSpeakerRouting(useSpeaker: Bool) async throws {
-        speakerRoutingOverride = useSpeaker
+    public func setAudioOutput(device: AudioOutputDeviceType) async throws {
+        guard isRunning else {
+            throw RealtimeError.audioPlaybackFailed(
+                NSError(domain: "MockAudioPlayback", code: -3, userInfo: [
+                    NSLocalizedDescriptionKey: "Audio playback is not active"
+                ])
+            )
+        }
+        currentOutput = device
     }
     
-    public var speakerRouting: Bool? {
-        return speakerRoutingOverride
+    public var availableAudioOutputDevices: [AudioOutputDeviceType] {
+        return [.builtInSpeaker, .builtInReceiver, .bluetooth(name: "Mock AirPods")]
     }
     
-    public var isBluetoothConnected: Bool {
-        return false // Mock always returns false
+    public var currentAudioOutput: AudioOutputDeviceType {
+        return currentOutput
     }
 }

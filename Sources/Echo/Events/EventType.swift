@@ -57,6 +57,9 @@ public enum EventType: String, Sendable, CaseIterable {
     /// Audio system has stopped
     case audioStopped
 
+    /// Audio output device changed
+    case audioOutputChanged
+
     // MARK: - Turn Events
 
     /// Speaking turn changed between user and assistant
