@@ -11,7 +11,7 @@ import Foundation
 /// Echo library version information
 public enum EchoVersion {
     /// Current version of the Echo library
-    public static let current = Version(major: 1, minor: 2, patch: 1)
+    public static let current = Version(major: 1, minor: 2, patch: 2)
     
     /// Version string (e.g., "1.0.0")
     public static var string: String {
@@ -81,6 +81,23 @@ public struct BuildInfo: Sendable {
 extension EchoVersion {
     /// Version history with release notes
     public static let history: [(version: Version, date: String, notes: String)] = [
+        (
+            version: Version(major: 1, minor: 2, patch: 2),
+            date: "2025-11-23",
+            notes: """
+            🔧 Audio Routing Fix
+            
+            Bug Fixes:
+            • Fixed audio routing to speaker/receiver - audio now correctly routes to selected device
+            • Both engines properly stop before route changes to prevent route caching
+            • Route verification ensures changes take effect before restarting engines
+            • Fixed AudioCapture.pause() to properly stop engine (AVAudioEngine has no pause method)
+            • Improved timing and delays for route stabilization
+            
+            Documentation:
+            • Added background audio support documentation to README
+            """
+        ),
         (
             version: Version(major: 1, minor: 2, patch: 1),
             date: "2025-11-23",

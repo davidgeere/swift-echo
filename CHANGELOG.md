@@ -5,6 +5,36 @@ All notable changes to Echo will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2025-11-23
+
+### Fixed
+
+#### Audio Output Device Routing
+- **Fixed audio routing to speaker/receiver** - Audio now correctly routes to the selected output device
+  - Previously, audio would continue playing from receiver even when speaker was selected
+  - Both capture and playback engines are now properly stopped before route changes
+  - Route changes are verified and engines restart with the new route
+  - Prevents route caching issues that caused incorrect audio output
+
+- **Improved engine restart sequence** - Better timing and verification during audio output changes
+  - Engines stop before route change to prevent route caching
+  - Added delays to allow route changes to stabilize
+  - Route verification ensures the change actually took effect
+  - Retry logic for speaker override if route doesn't change immediately
+  - Both engines restart reliably after route change
+
+- **Fixed AudioCapture.pause() method** - Corrected implementation to properly stop engine
+  - AVAudioEngine doesn't have a pause() method
+  - Now properly stops engine while keeping tap installed for resume()
+  - Allows clean engine restart without reinstalling audio tap
+
+### Added
+
+#### Documentation
+- **Background audio support documentation** - Added README section explaining app-level configuration
+  - Documents required `UIBackgroundModes` entry in Info.plist
+  - Notes that library already supports background audio with current setup
+
 ## [1.2.1] - 2025-11-23
 
 ### Fixed
