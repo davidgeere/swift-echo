@@ -406,15 +406,6 @@ public class Conversation {
                     responseFormat: format
                 )
                 
-                #if DEBUG
-                print("[Conversation] JSON mode: Response output count: \(response.output.count)")
-                #endif
-                if !response.output.isEmpty {
-                    #if DEBUG
-                print("[Conversation] JSON mode: First output item: \(response.output[0])")
-                #endif
-                }
-                
                 // Try to extract text from the response
                 // In JSON mode, we might not get a message with text but we still get content
                 var responseText: String? = response.firstText
@@ -440,37 +431,21 @@ public class Conversation {
                 
                 // Extract and enqueue response message
                 if let firstItem = responseText {
-                    #if DEBUG
-                    print("[Conversation] JSON mode: Got text: \(firstItem)")
-                    #endif
                     let messageId = await messageQueue.enqueue(
                         role: .assistant,
                         text: firstItem,
                         audioData: nil,
                         transcriptStatus: .notApplicable
                     )
-                    #if DEBUG
-                    print("[Conversation] JSON mode: Enqueued with ID: \(messageId)")
-                    #endif
                     
                     // Return the created message
                     let message = await messageQueue.getMessage(byId: messageId)
-                    #if DEBUG
-                    print("[Conversation] JSON mode: Retrieved message: \(String(describing: message))")
-                    #endif
                     return message
                 }
-                #if DEBUG
-                print("[Conversation] JSON mode: No text in response")
-                #endif
                 return nil
             } else {
                 // Streaming mode (default behavior)
                 // CRITICAL FIX: Wait for stream completion using continuation
-                #if DEBUG
-                print("[Conversation] Starting streaming response...")
-                #endif
-                
                 let assistantMessage = await withCheckedContinuation { (continuation: CheckedContinuation<Message?, Never>) in
                     Task {
                         await client.withStreamResponse(
@@ -499,10 +474,6 @@ public class Conversation {
                                         }
                                         
                                     case .responseFailed(let error):
-                                        // Log error in debug builds
-                                        #if DEBUG
-                                        print("[Conversation] Stream failed with error: \(error)")
-                                        #endif
                                         await eventEmitter.emit(.error(error: EchoError.invalidResponse(error)))
                                         
                                     case .raw(let type, let data):
@@ -548,9 +519,6 @@ public class Conversation {
                                     )
                                 }
                             } catch {
-                                #if DEBUG
-                                print("[Conversation] Stream error: \(error)")
-                                #endif
                                 await eventEmitter.emit(.error(error: error))
                             }
                             
@@ -635,10 +603,6 @@ public class Conversation {
     public func switchMode(to newMode: EchoMode) async throws {
         guard mode != newMode else { return }
 
-        #if DEBUG
-        print("[Conversation] 🔄 Switching mode from \(mode.rawValue) to \(newMode.rawValue)")
-        #endif
-
         await eventEmitter.emit(.modeSwitching(from: mode, to: newMode))
 
         switch (mode, newMode) {
@@ -652,61 +616,25 @@ public class Conversation {
 
         mode = newMode
         await eventEmitter.emit(.modeSwitched(to: newMode))
-        
-        #if DEBUG
-        print("[Conversation] ✅ Mode switched to \(newMode.rawValue)")
-        #endif
     }
 
     private func transitionAudioToText() async throws {
-        #if DEBUG
-        print("[Conversation] 🔄 Transitioning from audio to text mode...")
-        #endif
-        
-        // 1. Get all messages from queue (includes transcripts from audio)
-        let messages = await messageQueue.getOrderedMessages()
-        
-        #if DEBUG
-        print("[Conversation] 📝 Preserving \(messages.count) messages for text mode")
-        #endif
-
         // 2. Disconnect Realtime WebSocket
-        #if DEBUG
-        print("[Conversation] 🔌 Disconnecting Realtime client...")
-        #endif
         await realtimeClient?.disconnect()
         realtimeClient = nil
         turnManager = nil
 
         // 3. Initialize Responses client
-        #if DEBUG
-        print("[Conversation] 📝 Initializing text mode client...")
-        #endif
         try await initializeTextMode()
-        
-        #if DEBUG
-        print("[Conversation] ✅ Transitioned to text mode")
-        #endif
 
         // Context is already preserved in MessageQueue as text transcripts
     }
 
     private func transitionTextToAudio() async throws {
-        #if DEBUG
-        print("[Conversation] 🔄 Transitioning from text to audio mode...")
-        #endif
-        
         // 1. Get conversation history
         let messages = await messageQueue.getOrderedMessages()
-        
-        #if DEBUG
-        print("[Conversation] 📝 Injecting \(messages.count) messages into audio mode")
-        #endif
 
         // 2. Initialize Realtime WebSocket FIRST (before destroying responses client)
-        #if DEBUG
-        print("[Conversation] 🎤 Initializing audio mode client...")
-        #endif
         try await initializeAudioMode()
 
         // 3. Clean up Responses client only AFTER successful audio initialization
@@ -716,14 +644,10 @@ public class Conversation {
         guard let client = realtimeClient else {
             throw EchoError.clientNotInitialized("Realtime client not initialized after initialization")
         }
-
-        #if DEBUG
-        print("[Conversation] 📤 Sending conversation history to Realtime API...")
-        #endif
         
         // Send each message as a conversation item
         // CRITICAL: Realtime API expects "input_text" for user messages and "text" for assistant messages
-        for (index, message) in messages.enumerated() {
+        for message in messages {
             let contentType = message.role == .user ? "input_text" : "text"
             let itemDict: [String: Any] = [
                 "type": "message",
@@ -738,17 +662,7 @@ public class Conversation {
 
             let sendableItem = try SendableJSON.from(dictionary: itemDict)
             try await client.send(.conversationItemCreate(item: sendableItem, previousItemId: nil))
-            
-            #if DEBUG
-            if (index + 1) % 5 == 0 || index == messages.count - 1 {
-                print("[Conversation] 📤 Sent \(index + 1)/\(messages.count) messages")
-            }
-            #endif
         }
-
-        #if DEBUG
-        print("[Conversation] ✅ Transitioned to audio mode with full context")
-        #endif
 
         // Ready for audio interaction with full context
     }

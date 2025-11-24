@@ -54,10 +54,6 @@ public actor AudioCapture: AudioCaptureProtocol {
             )
         }
 
-        #if DEBUG
-        print("[AudioCapture] 🎤 Starting audio capture...")
-        #endif
-
         // Request microphone permission
         #if os(iOS)
         let permissionGranted = await withCheckedContinuation { continuation in
@@ -66,18 +62,12 @@ public actor AudioCapture: AudioCaptureProtocol {
             }
         }
         guard permissionGranted else {
-            #if DEBUG
-            print("[AudioCapture] ❌ Microphone permission denied")
-            #endif
             throw RealtimeError.audioCaptureFailed(
                 NSError(domain: "AudioCapture", code: -2, userInfo: [
                     NSLocalizedDescriptionKey: "Microphone permission denied"
                 ])
             )
         }
-        #if DEBUG
-        print("[AudioCapture] ✅ Microphone permission granted")
-        #endif
         #endif
 
         do {
@@ -93,12 +83,6 @@ public actor AudioCapture: AudioCaptureProtocol {
                 options: [.allowBluetoothHFP, .mixWithOthers]
             )
             try audioSession.setActive(true, options: [])
-            
-            #if DEBUG
-            let currentRoute = audioSession.currentRoute
-            print("[AudioCapture] 🎤 Audio session activated")
-            print("[AudioCapture] 🎤 Current input route: \(currentRoute.inputs.map { "\($0.portType.rawValue) - \($0.portName)" }.joined(separator: ", "))")
-            #endif
             #endif
 
             // Create audio engine
@@ -133,19 +117,10 @@ public actor AudioCapture: AudioCaptureProtocol {
                         // Encode to base64
                         let base64Audio = await self.processor.toBase64(audioData)
 
-                        #if DEBUG
-                        if level > 0.01 { // Only log when there's actual audio
-                            print("[AudioCapture] 🎤 Captured audio chunk - level: \(String(format: "%.3f", level)), size: \(base64Audio.count) bytes")
-                        }
-                        #endif
-
                         // Send to callback
                         await onAudioChunk(base64Audio)
                     } catch {
                         // Log error but continue capturing
-                        #if DEBUG
-                        print("[AudioCapture] ❌ Audio conversion error: \(error)")
-                        #endif
                     }
                 }
             }
@@ -157,15 +132,7 @@ public actor AudioCapture: AudioCaptureProtocol {
             self.inputNode = inputNode
             self.isCapturing = true
 
-            #if DEBUG
-            print("[AudioCapture] ✅ Audio capture started successfully")
-            print("[AudioCapture] 🎤 Engine running: \(engine.isRunning)")
-            #endif
-
         } catch {
-            #if DEBUG
-            print("[AudioCapture] ❌ Failed to start audio capture: \(error)")
-            #endif
             throw RealtimeError.audioCaptureFailed(error)
         }
     }
@@ -173,11 +140,6 @@ public actor AudioCapture: AudioCaptureProtocol {
     /// Stops capturing audio
     public func stop() {
         guard isCapturing else { return }
-
-        #if DEBUG
-        print("[AudioCapture] 🛑 Stopping audio capture...")
-        print("[AudioCapture] 🎤 Engine running before stop: \(audioEngine?.isRunning ?? false)")
-        #endif
 
         inputNode?.removeTap(onBus: 0)
         audioEngine?.stop()
@@ -191,20 +153,12 @@ public actor AudioCapture: AudioCaptureProtocol {
         isCapturing = false
 
         audioLevelContinuation.yield(0.0)
-
-        #if DEBUG
-        print("[AudioCapture] ✅ Audio capture stopped")
-        #endif
     }
 
     /// Pauses audio capture (stops engine but keeps tap installed)
     /// Note: AVAudioEngine doesn't have pause(), so we stop the engine
     /// The tap remains installed and can be restarted with resume()
     public func pause() {
-        #if DEBUG
-        print("[AudioCapture] ⏸️ Pausing audio capture")
-        print("[AudioCapture] 🎤 Engine running: \(audioEngine?.isRunning ?? false)")
-        #endif
         // Stop engine but keep tap installed (don't call removeTap)
         // This allows resume() to restart without reinstalling tap
         audioEngine?.stop()
@@ -220,38 +174,17 @@ public actor AudioCapture: AudioCaptureProtocol {
             )
         }
 
-        #if DEBUG
-        print("[AudioCapture] ▶️ Resuming audio capture")
-        print("[AudioCapture] 🎤 Engine running before resume: \(engine.isRunning)")
-        #endif
-
         if !engine.isRunning {
             // Stop engine first if it's in a bad state
             engine.stop()
             
             // Restart the engine
             try engine.start()
-            
-            #if DEBUG
-            let isRunning = engine.isRunning
-            print("[AudioCapture] ✅ Engine restart attempted - running: \(isRunning)")
-            
-            if !isRunning {
-                print("[AudioCapture] ⚠️ WARNING: Engine restart returned but engine is not running!")
-            }
-            #endif
-        } else {
-            #if DEBUG
-            print("[AudioCapture] ✅ Engine already running")
-            #endif
         }
         
         // Ensure we're still capturing
         if !isCapturing {
             isCapturing = true
-            #if DEBUG
-            print("[AudioCapture] ✅ Capture state restored")
-            #endif
         }
     }
 

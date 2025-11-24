@@ -113,10 +113,7 @@ public actor RealtimeClient {
             // Send the item and request a response
             try await send(.conversationItemCreate(item: sendableItem, previousItemId: nil))
             try await send(.responseCreate(response: nil))
-
-            print("[RealtimeClient] ✅ Tool result submitted for call ID: \(toolCallId)")
         } catch {
-            print("[RealtimeClient] ❌ Failed to submit tool result: \(error)")
             await eventEmitter.emit(.error(error: RealtimeError.eventEncodingFailed(error)))
         }
     }
@@ -173,26 +170,19 @@ public actor RealtimeClient {
             try await waitForSessionCreated()
 
             // Configure session
-            print("[RealtimeClient] 🔧 Configuring session...")
             try await configureSession()
-            print("[RealtimeClient] ✅ Session configured successfully")
 
             // Start audio if configured
             if configuration.startAudioAutomatically {
-                print("[RealtimeClient] 🎤 Starting audio automatically...")
                 try await startAudio()
-                print("[RealtimeClient] ✅ Audio started successfully")
             }
 
             sessionState = .connected
-            print("[RealtimeClient] ✅ Connection complete - sessionState = .connected")
 
             // Emit connection event
             await eventEmitter.emit(.connectionStatusChanged(isConnected: true))
 
         } catch {
-            print("[RealtimeClient] ❌ Connection failed with error: \(error)")
-            print("[RealtimeClient] ❌ Error type: \(type(of: error))")
             sessionState = .failed
             // Clean up WebSocket on failure
             await webSocket.disconnect()
@@ -241,10 +231,6 @@ public actor RealtimeClient {
 
     /// Starts audio capture and playback
     public func startAudio() async throws {
-        #if DEBUG
-        print("[RealtimeClient] 🎵 Starting audio system...")
-        #endif
-        
         // Emit audio starting event
         await eventEmitter.emit(.audioStarting)
 
@@ -256,10 +242,6 @@ public actor RealtimeClient {
             } else {
                 capture = AudioCapture(format: configuration.audioFormat)
             }
-
-            #if DEBUG
-            print("[RealtimeClient] 🎤 Starting audio capture...")
-            #endif
             
             try await capture.start { [weak self] base64Audio in
                 guard let self = self else { return }
@@ -268,11 +250,6 @@ public actor RealtimeClient {
                 try? await self.send(.inputAudioBufferAppend(audio: base64Audio))
             }
             self.audioCapture = capture
-
-            #if DEBUG
-            let captureActive = await capture.isActive
-            print("[RealtimeClient] ✅ Audio capture started - active: \(captureActive)")
-            #endif
 
             // Monitor audio levels
             Task {
@@ -289,18 +266,9 @@ public actor RealtimeClient {
             } else {
                 playback = AudioPlayback(format: configuration.audioFormat)
             }
-
-            #if DEBUG
-            print("[RealtimeClient] 🔊 Starting audio playback...")
-            #endif
             
             try await playback.start()
             self.audioPlayback = playback
-
-            #if DEBUG
-            let playbackActive = await playback.isActive
-            print("[RealtimeClient] ✅ Audio playback started - active: \(playbackActive)")
-            #endif
 
             // Set up route change observer for audio output changes
             #if os(iOS)
@@ -311,14 +279,7 @@ public actor RealtimeClient {
 
             // Emit audio started event after both capture and playback are ready
             await eventEmitter.emit(.audioStarted)
-            
-            #if DEBUG
-            print("[RealtimeClient] ✅ Audio system fully started")
-            #endif
         } catch {
-            #if DEBUG
-            print("[RealtimeClient] ❌ Failed to start audio system: \(error)")
-            #endif
             // Emit audio stopped event if setup fails
             await eventEmitter.emit(.audioStopped)
             throw error
@@ -327,12 +288,6 @@ public actor RealtimeClient {
 
     /// Stops audio capture and playback
     public func stopAudio() async {
-        #if DEBUG
-        print("[RealtimeClient] 🛑 Stopping audio system...")
-        let hadCapture = audioCapture != nil
-        let hadPlayback = audioPlayback != nil
-        #endif
-        
         // Only emit stopped event if audio was actually started
         let wasStarted = audioCapture != nil || audioPlayback != nil
 
@@ -345,10 +300,6 @@ public actor RealtimeClient {
         if wasStarted {
             await eventEmitter.emit(.audioStopped)
         }
-        
-        #if DEBUG
-        print("[RealtimeClient] ✅ Audio system stopped (had capture: \(hadCapture), had playback: \(hadPlayback))")
-        #endif
     }
 
     /// Mutes or unmutes audio input
@@ -363,22 +314,11 @@ public actor RealtimeClient {
             )
         }
 
-        #if DEBUG
-        print("[RealtimeClient] 🔇 Setting muted: \(muted)")
-        let wasActive = await capture.isActive
-        print("[RealtimeClient] 🎤 Capture active before mute change: \(wasActive)")
-        #endif
-
         if muted {
             await capture.pause()
         } else {
             try await capture.resume()
         }
-        
-        #if DEBUG
-        let isActive = await capture.isActive
-        print("[RealtimeClient] 🎤 Capture active after mute change: \(isActive)")
-        #endif
     }
 
     /// Sets the audio output device
@@ -393,22 +333,12 @@ public actor RealtimeClient {
             )
         }
         
-        #if DEBUG
-        print("[RealtimeClient] 🔊 Setting audio output to: \(device.description)")
-        let playbackActiveBefore = await playback.isActive
-        let captureActiveBefore = await audioCapture?.isActive ?? false
-        print("[RealtimeClient] 🔊 Playback active before: \(playbackActiveBefore)")
-        print("[RealtimeClient] 🔊 Capture active before: \(captureActiveBefore)")
-        #endif
-        
         // CRITICAL FIX: Stop capture engine before route change (same as playback)
         // This prevents route caching issues
+        let captureActiveBefore = await audioCapture?.isActive ?? false
         let needsCaptureRestart = captureActiveBefore
         
         if let capture = audioCapture, captureActiveBefore {
-            #if DEBUG
-            print("[RealtimeClient] ⏸️ Stopping capture engine before route change...")
-            #endif
             // Stop the engine (keeps tap installed, ready for restart)
             await capture.pause()
             // Small delay to ensure capture fully stops
@@ -418,46 +348,19 @@ public actor RealtimeClient {
         // Change playback route (this will stop/restart playback engine)
         try await playback.setAudioOutput(device: device)
         
-        #if DEBUG
-        let playbackActiveAfter = await playback.isActive
-        let captureActiveAfter = await audioCapture?.isActive ?? false
-        print("[RealtimeClient] 🔊 Playback active after: \(playbackActiveAfter)")
-        print("[RealtimeClient] 🔊 Capture active after: \(captureActiveAfter)")
-        #endif
-        
         // CRITICAL FIX: Restart capture engine after route change
         // Both engines need to restart with the new route
         if let capture = audioCapture, needsCaptureRestart {
-            #if DEBUG
-            print("[RealtimeClient] ▶️ Restarting capture engine after route change...")
-            #endif
             do {
                 try await capture.resume()
-                #if DEBUG
-                let captureRestarted = await capture.isActive
-                print("[RealtimeClient] ✅ Capture restarted - active: \(captureRestarted)")
-                #endif
             } catch {
-                #if DEBUG
-                print("[RealtimeClient] ❌ Failed to restart capture: \(error)")
-                #endif
                 // Don't throw - playback still works, just log the error
             }
         }
         
-        #if DEBUG
-        if !playbackActiveAfter && playbackActiveBefore {
-            print("[RealtimeClient] ⚠️ WARNING: Playback stopped after audio output change!")
-        }
-        #endif
-        
         // Emit event for output change
         let currentDevice = await playback.currentAudioOutput
         await eventEmitter.emit(.audioOutputChanged(device: currentDevice))
-        
-        #if DEBUG
-        print("[RealtimeClient] ✅ Audio output changed to: \(currentDevice.description)")
-        #endif
     }
     
     /// List of available audio output devices
@@ -524,7 +427,6 @@ public actor RealtimeClient {
     // MARK: - Private Helpers
 
     private func waitForSessionCreated() async throws {
-        print("[RealtimeClient] 🔍 Waiting for session.created event...")
         // Wait up to 10 seconds for session.created
         // NOTE: We don't consume messageStream here anymore because it would
         // race with startEventListener(). Instead, we rely on the fact that
@@ -536,13 +438,8 @@ public actor RealtimeClient {
                 throw RealtimeError.sessionInitializationFailed("Client deallocated")
             }
 
-            var pollCount = 0
             // Poll for sessionId to be set by the event listener
             while await self.sessionId == nil {
-                pollCount += 1
-                if pollCount % 10 == 0 {
-                    print("[RealtimeClient] 🔍 Still waiting for session.created... (\(pollCount * 100)ms)")
-                }
                 try await Task.sleep(for: .milliseconds(100))
             }
 
@@ -550,7 +447,6 @@ public actor RealtimeClient {
                 throw RealtimeError.sessionInitializationFailed("Session ID not set")
             }
 
-            print("[RealtimeClient] ✅ Session created with ID: \(id)")
             return id
         }
 
@@ -589,25 +485,15 @@ public actor RealtimeClient {
 
         let sessionDict = session.toRealtimeFormat()
 
-        // Log session configuration for debugging
-        print("[RealtimeClient] 🔧 Session configuration:")
-        print("[RealtimeClient]   - input_audio_transcription: \(sessionDict["input_audio_transcription"] as? [String: Any] ?? [:])")
-        print("[RealtimeClient]   - turn_detection: \(sessionDict["turn_detection"] != nil ? "enabled" : "disabled")")
-        print("[RealtimeClient]   - tools: \(tools.count) registered")
-        print("[RealtimeClient]   - MCP servers: \(mcpServers.count) registered")
-
         let sessionJSON = try SendableJSON.from(dictionary: sessionDict)
         try await send(.sessionUpdate(session: sessionJSON))
     }
 
     private func startEventListener() {
-        print("[RealtimeClient] 🎧 Starting event listener...")
         Task {
             for await message in webSocket.messageStream {
-                print("[RealtimeClient] 📨 Received message from WebSocket")
                 await handleServerMessage(message)
             }
-            print("[RealtimeClient] ⚠️ Event listener stream ended")
         }
     }
 
@@ -633,13 +519,9 @@ public actor RealtimeClient {
     }
 
     private func handleServerEvent(_ event: ServerEvent) async {
-        // Log ALL events to debug transcription issue
-        print("[RealtimeClient] 📥 Server event: \(event.typeName)")
-
         switch event {
         // Session events
         case .sessionCreated(let session):
-            print("[RealtimeClient] ✅ Session created event received: \(session.id)")
             self.sessionId = session.id
 
         // Error events
@@ -648,17 +530,12 @@ public actor RealtimeClient {
 
         // Audio buffer committed - creates message slot
         case .inputAudioBufferCommitted(let itemId, _):
-            print("[RealtimeClient] 📦 Audio buffer committed - itemId: \(itemId)")
             currentUserItemId = itemId
             await eventEmitter.emit(.userAudioBufferCommitted(itemId: itemId))
 
         // Speech detection
         // CRITICAL FIX: Route VAD events through TurnManager
         case .inputAudioBufferSpeechStarted:
-            #if DEBUG
-            print("[RealtimeClient] 🎤 User started speaking (VAD detected)")
-            #endif
-            
             // Stop assistant playback when user starts speaking
             await audioPlayback?.interrupt()
             
@@ -673,10 +550,6 @@ public actor RealtimeClient {
             }
 
         case .inputAudioBufferSpeechStopped:
-            #if DEBUG
-            print("[RealtimeClient] 🎤 User stopped speaking (VAD detected)")
-            #endif
-            
             // Emit processing status when speech stops
             await eventEmitter.emit(.audioStatusChanged(status: .processing))
             
@@ -689,20 +562,12 @@ public actor RealtimeClient {
 
         // Transcription
         case .conversationItemInputAudioTranscriptionCompleted(let itemId, let transcript):
-            #if DEBUG
-            print("[RealtimeClient] 📝 User transcription completed - itemId: \(itemId), transcript: '\(transcript)'")
-            #endif
             currentTranscripts[itemId] = transcript
 
             await eventEmitter.emit(.userTranscriptionCompleted(transcript: transcript, itemId: itemId))
 
         // Audio response
         case .responseAudioDelta(_, _, _, _, let delta):
-            #if DEBUG
-            let audioSize = delta.count
-            print("[RealtimeClient] 🔊 Received audio delta (\(audioSize) bytes)")
-            #endif
-            
             // Emit speaking status when audio starts
             await eventEmitter.emit(.audioStatusChanged(status: .speaking))
             
@@ -714,10 +579,6 @@ public actor RealtimeClient {
                 }
 
                 try? await playback.enqueue(base64Audio: delta)
-            } else {
-                #if DEBUG
-                print("[RealtimeClient] ⚠️ WARNING: Received audio delta but playback is nil!")
-                #endif
             }
 
         case .responseAudioTranscriptDelta(_, let itemId, _, _, let delta):
