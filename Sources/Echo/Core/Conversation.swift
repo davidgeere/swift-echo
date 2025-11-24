@@ -635,6 +635,10 @@ public class Conversation {
     public func switchMode(to newMode: EchoMode) async throws {
         guard mode != newMode else { return }
 
+        #if DEBUG
+        print("[Conversation] 🔄 Switching mode from \(mode.rawValue) to \(newMode.rawValue)")
+        #endif
+
         await eventEmitter.emit(.modeSwitching(from: mode, to: newMode))
 
         switch (mode, newMode) {
@@ -648,28 +652,61 @@ public class Conversation {
 
         mode = newMode
         await eventEmitter.emit(.modeSwitched(to: newMode))
+        
+        #if DEBUG
+        print("[Conversation] ✅ Mode switched to \(newMode.rawValue)")
+        #endif
     }
 
     private func transitionAudioToText() async throws {
+        #if DEBUG
+        print("[Conversation] 🔄 Transitioning from audio to text mode...")
+        #endif
+        
         // 1. Get all messages from queue (includes transcripts from audio)
-        let _ = await messageQueue.getOrderedMessages()
+        let messages = await messageQueue.getOrderedMessages()
+        
+        #if DEBUG
+        print("[Conversation] 📝 Preserving \(messages.count) messages for text mode")
+        #endif
 
         // 2. Disconnect Realtime WebSocket
+        #if DEBUG
+        print("[Conversation] 🔌 Disconnecting Realtime client...")
+        #endif
         await realtimeClient?.disconnect()
         realtimeClient = nil
         turnManager = nil
 
         // 3. Initialize Responses client
+        #if DEBUG
+        print("[Conversation] 📝 Initializing text mode client...")
+        #endif
         try await initializeTextMode()
+        
+        #if DEBUG
+        print("[Conversation] ✅ Transitioned to text mode")
+        #endif
 
         // Context is already preserved in MessageQueue as text transcripts
     }
 
     private func transitionTextToAudio() async throws {
+        #if DEBUG
+        print("[Conversation] 🔄 Transitioning from text to audio mode...")
+        #endif
+        
         // 1. Get conversation history
         let messages = await messageQueue.getOrderedMessages()
+        
+        #if DEBUG
+        print("[Conversation] 📝 Injecting \(messages.count) messages into audio mode")
+        #endif
 
         // 2. Initialize Realtime WebSocket FIRST (before destroying responses client)
+        #if DEBUG
+        print("[Conversation] 🎤 Initializing audio mode client...")
+        #endif
         try await initializeAudioMode()
 
         // 3. Clean up Responses client only AFTER successful audio initialization
@@ -680,9 +717,13 @@ public class Conversation {
             throw EchoError.clientNotInitialized("Realtime client not initialized after initialization")
         }
 
+        #if DEBUG
+        print("[Conversation] 📤 Sending conversation history to Realtime API...")
+        #endif
+        
         // Send each message as a conversation item
         // CRITICAL: Realtime API expects "input_text" for user messages and "text" for assistant messages
-        for message in messages {
+        for (index, message) in messages.enumerated() {
             let contentType = message.role == .user ? "input_text" : "text"
             let itemDict: [String: Any] = [
                 "type": "message",
@@ -697,7 +738,17 @@ public class Conversation {
 
             let sendableItem = try SendableJSON.from(dictionary: itemDict)
             try await client.send(.conversationItemCreate(item: sendableItem, previousItemId: nil))
+            
+            #if DEBUG
+            if (index + 1) % 5 == 0 || index == messages.count - 1 {
+                print("[Conversation] 📤 Sent \(index + 1)/\(messages.count) messages")
+            }
+            #endif
         }
+
+        #if DEBUG
+        print("[Conversation] ✅ Transitioned to audio mode with full context")
+        #endif
 
         // Ready for audio interaction with full context
     }
