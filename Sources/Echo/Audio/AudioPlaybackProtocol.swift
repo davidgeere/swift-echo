@@ -30,4 +30,7 @@ public protocol AudioPlaybackProtocol: Actor {
     
     /// Current active audio output device
     var currentAudioOutput: AudioOutputDeviceType { get }
+    
+    /// Whether playback is currently active
+    var isActive: Bool { get }
 }

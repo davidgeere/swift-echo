@@ -22,4 +22,7 @@ public protocol AudioCaptureProtocol: Actor {
 
     /// Stream of audio levels for visualization (0.0 to 1.0)
     var audioLevelStream: AsyncStream<Double> { get }
+    
+    /// Whether audio is currently being captured
+    var isActive: Bool { get }
 }

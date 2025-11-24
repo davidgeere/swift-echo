@@ -55,4 +55,8 @@ public actor MockAudioCapture: AudioCaptureProtocol {
         guard !isRunning else { return }
         isRunning = true
     }
+    
+    public var isActive: Bool {
+        return isRunning
+    }
 }

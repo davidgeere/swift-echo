@@ -57,4 +57,8 @@ public actor MockAudioPlayback: AudioPlaybackProtocol {
     public var currentAudioOutput: AudioOutputDeviceType {
         return currentOutput
     }
+    
+    public var isActive: Bool {
+        return isRunning
+    }
 }
