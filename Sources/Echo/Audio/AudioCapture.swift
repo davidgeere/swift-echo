@@ -222,9 +222,19 @@ public actor AudioCapture: AudioCaptureProtocol {
         #endif
 
         if !engine.isRunning {
+            // Stop engine first if it's in a bad state
+            engine.stop()
+            
+            // Restart the engine
             try engine.start()
+            
             #if DEBUG
-            print("[AudioCapture] ✅ Engine restarted - running: \(engine.isRunning)")
+            let isRunning = engine.isRunning
+            print("[AudioCapture] ✅ Engine restart attempted - running: \(isRunning)")
+            
+            if !isRunning {
+                print("[AudioCapture] ⚠️ WARNING: Engine restart returned but engine is not running!")
+            }
             #endif
         } else {
             #if DEBUG

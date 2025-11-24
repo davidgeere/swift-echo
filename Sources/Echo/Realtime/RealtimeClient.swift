@@ -408,10 +408,29 @@ public actor RealtimeClient {
         let captureActiveAfter = await audioCapture?.isActive ?? false
         print("[RealtimeClient] 🔊 Playback active after: \(playbackActiveAfter)")
         print("[RealtimeClient] 🔊 Capture active after: \(captureActiveAfter)")
+        #endif
         
-        if !captureActiveAfter && captureActiveBefore {
-            print("[RealtimeClient] ⚠️ WARNING: Capture stopped after audio output change!")
+        // CRITICAL FIX: Restart capture engine if it stopped
+        // The session deactivation/reactivation stops both engines
+        if let capture = audioCapture, !captureActiveAfter && captureActiveBefore {
+            #if DEBUG
+            print("[RealtimeClient] ⚠️ Capture stopped after audio output change, restarting...")
+            #endif
+            do {
+                try await capture.resume()
+                #if DEBUG
+                let captureRestarted = await capture.isActive
+                print("[RealtimeClient] ✅ Capture restarted - active: \(captureRestarted)")
+                #endif
+            } catch {
+                #if DEBUG
+                print("[RealtimeClient] ❌ Failed to restart capture: \(error)")
+                #endif
+                // Don't throw - playback still works, just log the error
+            }
         }
+        
+        #if DEBUG
         if !playbackActiveAfter && playbackActiveBefore {
             print("[RealtimeClient] ⚠️ WARNING: Playback stopped after audio output change!")
         }

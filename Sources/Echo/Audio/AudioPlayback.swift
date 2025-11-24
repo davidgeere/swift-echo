@@ -265,11 +265,21 @@ public actor AudioPlayback: AudioPlaybackProtocol {
             portOverride = .none
         }
         
-        // CRITICAL FIX: Deactivate session first to clear any existing override
-        #if DEBUG
-        print("[AudioPlayback] 🔊 Deactivating audio session...")
-        #endif
-        try audioSession.setActive(false)
+        // CRITICAL FIX: Remember engine state before session changes
+        let wasEngineRunning = audioEngine?.isRunning ?? false
+        let wasPlayerPlaying = playerNode?.isPlaying ?? false
+        
+        // Try to reconfigure without deactivating first (preserves engines)
+        // Clear any existing override
+        do {
+            try audioSession.overrideOutputAudioPort(.none)
+        } catch {
+            // If clearing fails, we need to deactivate
+            #if DEBUG
+            print("[AudioPlayback] 🔊 Could not clear override, deactivating session...")
+            #endif
+            try audioSession.setActive(false, options: .notifyOthersOnDeactivation)
+        }
         
         // Reconfigure the category with the new options
         try audioSession.setCategory(
@@ -278,14 +288,26 @@ public actor AudioPlayback: AudioPlaybackProtocol {
             options: options
         )
         
-        // Reactivate the session
-        #if DEBUG
-        print("[AudioPlayback] 🔊 Reactivating audio session...")
-        #endif
-        try audioSession.setActive(true)
+        // Reactivate the session if it was deactivated
+        if !audioSession.isOtherAudioPlaying {
+            try audioSession.setActive(true)
+        }
         
-        // Apply port override AFTER reactivation
+        // Apply port override
         try audioSession.overrideOutputAudioPort(portOverride)
+        
+        // Restart engines if they were running before
+        if wasEngineRunning {
+            if let engine = audioEngine, !engine.isRunning {
+                #if DEBUG
+                print("[AudioPlayback] ▶️ Restarting engine after session change...")
+                #endif
+                try engine.start()
+            }
+            if let playerNode = playerNode, wasPlayerPlaying && !playerNode.isPlaying {
+                playerNode.play()
+            }
+        }
         
         #if DEBUG
         let currentRoute = audioSession.currentRoute
@@ -300,13 +322,39 @@ public actor AudioPlayback: AudioPlaybackProtocol {
             #if DEBUG
             print("[AudioPlayback] ⚠️ Engine stopped after session change, restarting...")
             #endif
-            try engine.start()
-            if let playerNode = playerNode, !playerNode.isPlaying {
-                playerNode.play()
+            do {
+                // Stop engine first if it's in a bad state
+                engine.stop()
+                
+                // Small delay to let engine fully stop
+                try await Task.sleep(nanoseconds: 10_000_000) // 10ms
+                
+                // Restart the engine
+                try engine.start()
+                
+                // Small delay to let engine fully start
+                try await Task.sleep(nanoseconds: 10_000_000) // 10ms
+                
+                if let playerNode = playerNode, !playerNode.isPlaying {
+                    playerNode.play()
+                }
+                
+                #if DEBUG
+                let isRunning = engine.isRunning
+                let isPlaying = playerNode?.isPlaying ?? false
+                print("[AudioPlayback] ✅ Engine restart attempted - running: \(isRunning), player playing: \(isPlaying)")
+                
+                if !isRunning {
+                    print("[AudioPlayback] ⚠️ WARNING: Engine restart returned but engine is not running!")
+                }
+                #endif
+            } catch {
+                #if DEBUG
+                print("[AudioPlayback] ❌ Failed to restart engine: \(error)")
+                #endif
+                // Re-throw the error so caller knows restart failed
+                throw RealtimeError.audioPlaybackFailed(error)
             }
-            #if DEBUG
-            print("[AudioPlayback] ✅ Engine restarted - running: \(engine.isRunning), player playing: \(playerNode?.isPlaying ?? false)")
-            #endif
         }
         
         // CRITICAL FIX: Give iOS a moment to apply the route change
