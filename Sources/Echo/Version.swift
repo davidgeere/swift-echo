@@ -11,7 +11,7 @@ import Foundation
 /// Echo library version information
 public enum EchoVersion {
     /// Current version of the Echo library
-    public static let current = Version(major: 1, minor: 2, patch: 0)
+    public static let current = Version(major: 1, minor: 2, patch: 1)
     
     /// Version string (e.g., "1.0.0")
     public static var string: String {
@@ -81,6 +81,24 @@ public struct BuildInfo: Sendable {
 extension EchoVersion {
     /// Version history with release notes
     public static let history: [(version: Version, date: String, notes: String)] = [
+        (
+            version: Version(major: 1, minor: 2, patch: 1),
+            date: "2025-11-23",
+            notes: """
+            🔧 Audio Engine Restart Fixes
+            
+            Bug Fixes:
+            • Fixed capture engine stopping after audio output change
+            • Capture engine now automatically restarts when switching devices
+            • Fixed playback engine restart failures with improved error handling
+            • Better audio session management to preserve engine state
+            
+            Debug Improvements:
+            • Added comprehensive debug logging for audio diagnostics
+            • Logs engine states, route changes, and restart attempts
+            • All debug logs are conditional (DEBUG builds only)
+            """
+        ),
         (
             version: Version(major: 1, minor: 2, patch: 0),
             date: "2025-11-23",

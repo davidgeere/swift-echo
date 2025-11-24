@@ -5,6 +5,38 @@ All notable changes to Echo will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2025-11-23
+
+### Fixed
+
+#### Audio Output Device Switching
+- **Fixed capture engine stopping after audio output change** - Capture engine now automatically restarts when it stops after switching audio output devices
+  - Previously, switching from receiver to speaker would stop the capture engine, causing the model to stop responding
+  - Capture engine is now automatically detected and restarted after audio output changes
+  - Prevents loss of listening ability when switching audio devices
+
+- **Fixed playback engine restart failures** - Improved playback engine restart logic with better error handling
+  - Added proper engine stop/start sequence with delays to ensure clean restart
+  - Better error handling and logging for engine restart failures
+  - Prevents playback from stopping when switching audio devices
+
+- **Improved audio session management** - Better handling of audio session reconfiguration
+  - Attempts to avoid deactivating session when possible to preserve engine state
+  - Uses `.notifyOthersOnDeactivation` option when deactivation is necessary
+  - Remembers engine state before changes and restores it after reconfiguration
+
+### Added
+
+#### Debug Logging
+- **Comprehensive debug logging for audio diagnostics** - Added extensive debug logging (within `#if DEBUG` blocks) to help diagnose audio issues
+  - Logs engine running state before and after audio output changes
+  - Logs capture and playback active states during device switching
+  - Logs audio session route changes and reconfiguration steps
+  - Logs engine restart attempts and success/failure
+  - Logs transcription events and VAD detection
+  - Logs mode switching transitions between audio and text
+  - All debug logs are conditional and only active in DEBUG builds
+
 ## [1.2.0] - 2025-11-23
 
 ### Changed
@@ -275,6 +307,7 @@ Echo is a unified Swift library for OpenAI's Realtime API (WebSocket-based voice
 
 ## Version History
 
+- **1.2.1** - Fixed capture/playback engine restart after audio output change
 - **1.2.0** - Audio output device selection API (breaking changes)
 - **1.1.2** - Fixed speaker routing and added state tracking
 - **1.1.0** - All events handler and stream
@@ -290,6 +323,7 @@ This project follows [Semantic Versioning](https://semver.org/):
 - **MINOR** version for backwards-compatible functionality additions
 - **PATCH** version for backwards-compatible bug fixes
 
+[1.2.1]: https://github.com/davidgeere/swift-echo/releases/tag/v1.2.1
 [1.2.0]: https://github.com/davidgeere/swift-echo/releases/tag/v1.2.0
 [1.1.2]: https://github.com/davidgeere/swift-echo/releases/tag/v1.1.2
 [1.1.0]: https://github.com/davidgeere/swift-echo/releases/tag/v1.1.0
