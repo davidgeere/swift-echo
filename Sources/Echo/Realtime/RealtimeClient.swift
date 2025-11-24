@@ -401,6 +401,21 @@ public actor RealtimeClient {
         print("[RealtimeClient] 🔊 Capture active before: \(captureActiveBefore)")
         #endif
         
+        // CRITICAL FIX: Stop capture engine before route change (same as playback)
+        // This prevents route caching issues
+        let needsCaptureRestart = captureActiveBefore
+        
+        if let capture = audioCapture, captureActiveBefore {
+            #if DEBUG
+            print("[RealtimeClient] ⏸️ Stopping capture engine before route change...")
+            #endif
+            // Stop the engine (keeps tap installed, ready for restart)
+            await capture.pause()
+            // Small delay to ensure capture fully stops
+            try await Task.sleep(nanoseconds: 20_000_000) // 20ms
+        }
+        
+        // Change playback route (this will stop/restart playback engine)
         try await playback.setAudioOutput(device: device)
         
         #if DEBUG
@@ -410,11 +425,11 @@ public actor RealtimeClient {
         print("[RealtimeClient] 🔊 Capture active after: \(captureActiveAfter)")
         #endif
         
-        // CRITICAL FIX: Restart capture engine if it stopped
-        // The session deactivation/reactivation stops both engines
-        if let capture = audioCapture, !captureActiveAfter && captureActiveBefore {
+        // CRITICAL FIX: Restart capture engine after route change
+        // Both engines need to restart with the new route
+        if let capture = audioCapture, needsCaptureRestart {
             #if DEBUG
-            print("[RealtimeClient] ⚠️ Capture stopped after audio output change, restarting...")
+            print("[RealtimeClient] ▶️ Restarting capture engine after route change...")
             #endif
             do {
                 try await capture.resume()

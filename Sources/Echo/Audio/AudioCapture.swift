@@ -197,13 +197,17 @@ public actor AudioCapture: AudioCaptureProtocol {
         #endif
     }
 
-    /// Pauses audio capture (keeps engine running)
+    /// Pauses audio capture (stops engine but keeps tap installed)
+    /// Note: AVAudioEngine doesn't have pause(), so we stop the engine
+    /// The tap remains installed and can be restarted with resume()
     public func pause() {
         #if DEBUG
         print("[AudioCapture] ⏸️ Pausing audio capture")
         print("[AudioCapture] 🎤 Engine running: \(audioEngine?.isRunning ?? false)")
         #endif
-        audioEngine?.pause()
+        // Stop engine but keep tap installed (don't call removeTap)
+        // This allows resume() to restart without reinstalling tap
+        audioEngine?.stop()
     }
 
     /// Resumes audio capture

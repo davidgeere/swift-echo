@@ -498,6 +498,27 @@ print("Title: \(post.title)")
 print("Tags: \(post.tags.joined(separator: ", "))")
 ```
 
+## 🔧 Background Audio Support
+
+Echo supports background audio playback, allowing conversations to continue when your app is in the background.
+
+### App-Level Configuration
+
+Add the `audio` background mode to your app's `Info.plist`:
+
+```xml
+<key>UIBackgroundModes</key>
+<array>
+    <string>audio</string>
+</array>
+```
+
+### Library Support
+
+Echo automatically configures the audio session with `.playAndRecord` category, which supports background audio. No additional library configuration is needed - just add the background mode to your `Info.plist`.
+
+**Note:** Background audio requires the app to be actively using audio. The system may suspend background audio if the app doesn't maintain an active audio session.
+
 ## 📱 Platform Requirements
 
 - iOS 18.0+ / macOS 14.0+

@@ -265,12 +265,22 @@ public actor AudioPlayback: AudioPlaybackProtocol {
             portOverride = .none
         }
         
-        // CRITICAL FIX: Remember engine state before session changes
+        // CRITICAL FIX: Stop engines BEFORE route change to prevent route caching
         let wasEngineRunning = audioEngine?.isRunning ?? false
         let wasPlayerPlaying = playerNode?.isPlaying ?? false
         
-        // Try to reconfigure without deactivating first (preserves engines)
-        // Clear any existing override
+        // Step 1: Stop engine and player FIRST to prevent route caching
+        if wasEngineRunning {
+            #if DEBUG
+            print("[AudioPlayback] ⏸️ Stopping engine before route change...")
+            #endif
+            audioEngine?.stop()
+            playerNode?.stop()
+            // Wait for engine to fully stop
+            try await Task.sleep(nanoseconds: 20_000_000) // 20ms
+        }
+        
+        // Step 2: Clear any existing override
         do {
             try audioSession.overrideOutputAudioPort(.none)
         } catch {
@@ -281,85 +291,78 @@ public actor AudioPlayback: AudioPlaybackProtocol {
             try audioSession.setActive(false, options: .notifyOthersOnDeactivation)
         }
         
-        // Reconfigure the category with the new options
+        // Step 3: Reconfigure the category with the new options
         try audioSession.setCategory(
             .playAndRecord,
             mode: .voiceChat,
             options: options
         )
         
-        // Reactivate the session if it was deactivated
+        // Step 4: Reactivate the session if it was deactivated
         if !audioSession.isOtherAudioPlaying {
             try audioSession.setActive(true)
         }
         
-        // Apply port override
+        // Step 5: Apply port override AFTER session is active
         try audioSession.overrideOutputAudioPort(portOverride)
-        
-        // Restart engines if they were running before
-        if wasEngineRunning {
-            if let engine = audioEngine, !engine.isRunning {
-                #if DEBUG
-                print("[AudioPlayback] ▶️ Restarting engine after session change...")
-                #endif
-                try engine.start()
-            }
-            if let playerNode = playerNode, wasPlayerPlaying && !playerNode.isPlaying {
-                playerNode.play()
-            }
-        }
         
         #if DEBUG
         let currentRoute = audioSession.currentRoute
         print("[AudioPlayback] 🔊 Audio session reconfigured")
         print("[AudioPlayback] 🔊 New output route: \(currentRoute.outputs.map { "\($0.portType.rawValue) - \($0.portName)" }.joined(separator: ", "))")
-        print("[AudioPlayback] 🎵 Engine running after switch: \(audioEngine?.isRunning ?? false)")
-        print("[AudioPlayback] 🎵 Player playing after switch: \(playerNode?.isPlaying ?? false)")
         #endif
         
-        // CRITICAL FIX: Give iOS a moment to apply the route change
-        // This ensures the session change is fully processed
-        try await Task.sleep(nanoseconds: 50_000_000) // 50ms
+        // Step 6: Wait for route change to take effect BEFORE restarting engine
+        try await Task.sleep(nanoseconds: 100_000_000) // 100ms - longer delay for route to stabilize
         
-        // Check if engines stopped AFTER delay (engine may stop asynchronously)
-        if let engine = audioEngine, !engine.isRunning {
-            #if DEBUG
-            print("[AudioPlayback] ⚠️ Engine stopped after session change (checked after delay), restarting...")
-            #endif
-            do {
-                // Stop engine first if it's in a bad state
-                engine.stop()
-                
-                // Small delay to let engine fully stop
-                try await Task.sleep(nanoseconds: 10_000_000) // 10ms
-                
-                // Restart the engine
-                try engine.start()
-                
-                // Small delay to let engine fully start
-                try await Task.sleep(nanoseconds: 10_000_000) // 10ms
-                
-                if let playerNode = playerNode, !playerNode.isPlaying {
-                    playerNode.play()
-                }
-                
+        // Step 7: Verify route actually changed (especially for speaker)
+        #if DEBUG
+        let verifyRoute = audioSession.currentRoute
+        let actualOutput = verifyRoute.outputs.first?.portType ?? .builtInReceiver
+        if device == .builtInSpeaker && actualOutput != .builtInSpeaker {
+            print("[AudioPlayback] ⚠️ WARNING: Route change may not have taken effect! Expected: Speaker, Got: \(actualOutput.rawValue)")
+            // Try override again
+            try audioSession.overrideOutputAudioPort(.speaker)
+            try await Task.sleep(nanoseconds: 50_000_000) // 50ms
+            let retryRoute = audioSession.currentRoute
+            let retryOutput = retryRoute.outputs.first?.portType ?? .builtInReceiver
+            print("[AudioPlayback] 🔊 Retry route: \(retryOutput.rawValue)")
+        }
+        #endif
+        
+        // Step 8: NOW restart engines if they were running before
+        if wasEngineRunning {
+            if let engine = audioEngine, !engine.isRunning {
                 #if DEBUG
-                let isRunning = engine.isRunning
-                let isPlaying = playerNode?.isPlaying ?? false
-                print("[AudioPlayback] ✅ Engine restart attempted - running: \(isRunning), player playing: \(isPlaying)")
-                
-                if !isRunning {
-                    print("[AudioPlayback] ⚠️ WARNING: Engine restart returned but engine is not running!")
+                print("[AudioPlayback] ▶️ Restarting engine after route change...")
+                #endif
+                do {
+                    try engine.start()
+                    
+                    // Small delay to let engine fully start
+                    try await Task.sleep(nanoseconds: 10_000_000) // 10ms
+                    
+                    if let playerNode = playerNode, wasPlayerPlaying && !playerNode.isPlaying {
+                        playerNode.play()
+                    }
+                    
+                    #if DEBUG
+                    print("[AudioPlayback] 🎵 Engine running after restart: \(engine.isRunning)")
+                    print("[AudioPlayback] 🎵 Player playing after restart: \(playerNode?.isPlaying ?? false)")
+                    #endif
+                } catch {
+                    #if DEBUG
+                    print("[AudioPlayback] ❌ Failed to restart engine: \(error)")
+                    #endif
+                    throw RealtimeError.audioPlaybackFailed(error)
                 }
-                #endif
-            } catch {
-                #if DEBUG
-                print("[AudioPlayback] ❌ Failed to restart engine: \(error)")
-                #endif
-                // Re-throw the error so caller knows restart failed
-                throw RealtimeError.audioPlaybackFailed(error)
             }
         }
+        
+        #if DEBUG
+        let finalRoute = audioSession.currentRoute
+        print("[AudioPlayback] 🔊 Final output route after restart: \(finalRoute.outputs.map { "\($0.portType.rawValue) - \($0.portName)" }.joined(separator: ", "))")
+        #endif
         #endif
     }
 
