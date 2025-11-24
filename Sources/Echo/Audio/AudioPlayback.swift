@@ -317,10 +317,14 @@ public actor AudioPlayback: AudioPlaybackProtocol {
         print("[AudioPlayback] 🎵 Player playing after switch: \(playerNode?.isPlaying ?? false)")
         #endif
         
-        // Check if engines stopped and restart if needed
+        // CRITICAL FIX: Give iOS a moment to apply the route change
+        // This ensures the session change is fully processed
+        try await Task.sleep(nanoseconds: 50_000_000) // 50ms
+        
+        // Check if engines stopped AFTER delay (engine may stop asynchronously)
         if let engine = audioEngine, !engine.isRunning {
             #if DEBUG
-            print("[AudioPlayback] ⚠️ Engine stopped after session change, restarting...")
+            print("[AudioPlayback] ⚠️ Engine stopped after session change (checked after delay), restarting...")
             #endif
             do {
                 // Stop engine first if it's in a bad state
@@ -356,10 +360,6 @@ public actor AudioPlayback: AudioPlaybackProtocol {
                 throw RealtimeError.audioPlaybackFailed(error)
             }
         }
-        
-        // CRITICAL FIX: Give iOS a moment to apply the route change
-        // This ensures currentAudioOutput reflects the new route
-        try await Task.sleep(nanoseconds: 50_000_000) // 50ms
         #endif
     }
 
@@ -447,6 +447,8 @@ public actor AudioPlayback: AudioPlaybackProtocol {
 
         #if DEBUG
         print("[AudioPlayback] ⚡ Interrupting playback")
+        print("[AudioPlayback] 🎵 Engine running before interrupt: \(audioEngine?.isRunning ?? false)")
+        print("[AudioPlayback] 🎵 Player playing before interrupt: \(playerNode.isPlaying)")
         #endif
 
         // Stop playback
@@ -459,7 +461,25 @@ public actor AudioPlayback: AudioPlaybackProtocol {
         // Clear our queue (for good measure, though not currently used)
         audioQueue.removeAll()
 
-        // Restart player if engine is still running
+        // CRITICAL FIX: Restart engine if it stopped (can happen after audio output changes)
+        if let engine = audioEngine, !engine.isRunning {
+            #if DEBUG
+            print("[AudioPlayback] ⚠️ Engine stopped, restarting...")
+            #endif
+            do {
+                try engine.start()
+                #if DEBUG
+                print("[AudioPlayback] ✅ Engine restarted - running: \(engine.isRunning)")
+                #endif
+            } catch {
+                #if DEBUG
+                print("[AudioPlayback] ❌ Failed to restart engine: \(error)")
+                #endif
+                // Don't throw - just log, we'll try to continue
+            }
+        }
+
+        // Restart player if engine is running
         if audioEngine?.isRunning == true {
             playerNode.play()
             #if DEBUG
