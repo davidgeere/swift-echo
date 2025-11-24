@@ -45,7 +45,8 @@ public actor AudioPlayback: AudioPlaybackProtocol {
         // Check available inputs for Bluetooth devices
         for input in availableInputs {
             if input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE {
-                if let name = input.portName {
+                let name = input.portName
+                if !name.isEmpty {
                     bluetoothDevices.insert(name)
                 }
             }
@@ -54,7 +55,8 @@ public actor AudioPlayback: AudioPlaybackProtocol {
         // Check current route outputs for Bluetooth devices
         for output in currentRoute.outputs {
             if output.portType == .bluetoothHFP || output.portType == .bluetoothA2DP || output.portType == .bluetoothLE {
-                if let name = output.portName {
+                let name = output.portName
+                if !name.isEmpty {
                     bluetoothDevices.insert(name)
                 }
             }
@@ -68,7 +70,8 @@ public actor AudioPlayback: AudioPlaybackProtocol {
         // Check for wired headphones
         for output in currentRoute.outputs {
             if output.portType == .headphones {
-                devices.append(.wiredHeadphones(name: output.portName))
+                let name = output.portName
+                devices.append(.wiredHeadphones(name: name.isEmpty ? nil : name))
                 break
             }
         }

@@ -56,16 +56,18 @@ public enum AudioOutputDeviceType: Sendable, Equatable {
     ///   - portName: Optional port name
     /// - Returns: AudioOutputDeviceType corresponding to the port
     #if os(iOS)
-    static func from(portType: AVAudioSession.Port, portName: String?) -> AudioOutputDeviceType {
+    static func from(portType: AVAudioSession.Port, portName: String) -> AudioOutputDeviceType {
+        let name: String? = portName.isEmpty ? nil : portName
+        
         switch portType {
         case .builtInSpeaker:
             return .builtInSpeaker
         case .builtInReceiver:
             return .builtInReceiver
         case .bluetoothHFP, .bluetoothA2DP, .bluetoothLE:
-            return .bluetooth(name: portName)
+            return .bluetooth(name: name)
         case .headphones:
-            return .wiredHeadphones(name: portName)
+            return .wiredHeadphones(name: name)
         default:
             return .systemDefault
         }
