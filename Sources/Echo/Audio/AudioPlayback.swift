@@ -222,6 +222,9 @@ public actor AudioPlayback: AudioPlaybackProtocol {
             portOverride = .none
         }
         
+        // CRITICAL FIX: Deactivate session first to clear any existing override
+        try audioSession.setActive(false)
+        
         // Reconfigure the category with the new options
         try audioSession.setCategory(
             .playAndRecord,
@@ -229,8 +232,15 @@ public actor AudioPlayback: AudioPlaybackProtocol {
             options: options
         )
         
-        // Apply port override
+        // Reactivate the session
+        try audioSession.setActive(true)
+        
+        // Apply port override AFTER reactivation
         try audioSession.overrideOutputAudioPort(portOverride)
+        
+        // CRITICAL FIX: Give iOS a moment to apply the route change
+        // This ensures currentAudioOutput reflects the new route
+        try await Task.sleep(nanoseconds: 50_000_000) // 50ms
         #endif
     }
 
