@@ -43,6 +43,12 @@ public struct EchoConfiguration: Sendable {
     /// Set to .none to minimize reasoning output, or .high for complex problems
     public let reasoningEffort: ReasoningEffort
 
+    // MARK: - System Instructions
+
+    /// Default system message/instructions for all conversations.
+    /// Can be overridden per-conversation when calling startConversation().
+    public let systemMessage: String?
+
     // MARK: - Transcription
 
     /// Whether to enable transcription in audio mode.
@@ -68,6 +74,7 @@ public struct EchoConfiguration: Sendable {
     ///   - temperature: Sampling temperature (default: 0.8)
     ///   - maxTokens: Maximum response tokens (default: nil for unlimited)
     ///   - reasoningEffort: Reasoning depth control (default: .none to minimize reasoning)
+    ///   - systemMessage: Default system instructions for all conversations (default: nil)
     ///   - enableTranscription: Enable audio transcription (default: true)
     ///   - logLevel: Logging verbosity (default: .info)
     public init(
@@ -80,6 +87,7 @@ public struct EchoConfiguration: Sendable {
         temperature: Double = 0.8,
         maxTokens: Int? = nil,
         reasoningEffort: ReasoningEffort = .none,
+        systemMessage: String? = nil,
         enableTranscription: Bool = true,
         logLevel: LogLevel = .info
     ) {
@@ -92,6 +100,7 @@ public struct EchoConfiguration: Sendable {
         self.temperature = temperature
         self.maxTokens = maxTokens
         self.reasoningEffort = reasoningEffort
+        self.systemMessage = systemMessage
         self.enableTranscription = enableTranscription
         self.logLevel = logLevel
     }
@@ -108,7 +117,7 @@ public struct EchoConfiguration: Sendable {
             voice: voice,
             audioFormat: audioFormat,
             turnDetection: turnDetection,
-            instructions: nil,
+            instructions: systemMessage,
             enableTranscription: enableTranscription,
             startAudioAutomatically: true,
             temperature: temperature,

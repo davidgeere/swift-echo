@@ -103,18 +103,21 @@ public class Echo {
     /// Starts a new conversation
     /// - Parameters:
     ///   - mode: The initial mode (audio or text)
-    ///   - systemMessage: Optional system instructions for the model
+    ///   - systemMessage: Optional system instructions for the model (overrides config default if provided)
     /// - Returns: A Conversation instance for managing the conversation
     /// - Throws: EchoError if conversation cannot be started
     public func startConversation(
         mode: EchoMode,
         systemMessage: String? = nil
     ) async throws -> Conversation {
+        // Use provided systemMessage or fall back to config's default
+        let finalSystemMessage = systemMessage ?? configuration.systemMessage
+        
         return try await Conversation(
             apiKey: apiKey,
             mode: mode,
             configuration: configuration,
-            systemMessage: systemMessage,
+            systemMessage: finalSystemMessage,
             eventEmitter: eventEmitter,
             tools: tools,
             mcpServers: mcpServers
@@ -133,6 +136,9 @@ public class Echo {
         turnMode: TurnDetection,
         systemMessage: String? = nil
     ) async throws -> Conversation {
+        // Use provided systemMessage or fall back to config's default
+        let finalSystemMessage = systemMessage ?? configuration.systemMessage
+        
         // Create a custom configuration with the specified turn mode
         // EchoConfiguration has let properties, so we create a new instance with overrides
         let configWithTurnMode = EchoConfiguration(
@@ -144,6 +150,8 @@ public class Echo {
             turnDetection: turnMode,  // Override with specified turn mode
             temperature: configuration.temperature,
             maxTokens: configuration.maxTokens,
+            reasoningEffort: configuration.reasoningEffort,
+            systemMessage: configuration.systemMessage,  // Preserve config's systemMessage
             enableTranscription: configuration.enableTranscription,
             logLevel: configuration.logLevel
         )
@@ -152,7 +160,7 @@ public class Echo {
             apiKey: apiKey,
             mode: mode,
             configuration: configWithTurnMode,
-            systemMessage: systemMessage,
+            systemMessage: finalSystemMessage,
             eventEmitter: eventEmitter,
             tools: tools,
             mcpServers: mcpServers
