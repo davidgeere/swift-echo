@@ -22,7 +22,10 @@ public actor MockAudioCapture: AudioCaptureProtocol {
         levelContinuation = continuation!
     }
     
-    public func start(onAudioChunk: @escaping @Sendable (String) async -> Void) async throws {
+    public func start(
+        onAudioChunk: @escaping @Sendable (String) async -> Void,
+        onAudioLevel: (@Sendable (Double) -> Void)? = nil
+    ) async throws {
         guard !isRunning else { return }
         isRunning = true
         
@@ -35,6 +38,7 @@ public actor MockAudioCapture: AudioCaptureProtocol {
                 
                 await onAudioChunk(base64)
                 levelContinuation.yield(0.0)  // Silent level
+                onAudioLevel?(0.0)  // Also call direct callback if set
                 
                 try? await Task.sleep(for: .milliseconds(20))
             }

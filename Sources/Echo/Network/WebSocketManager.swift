@@ -21,6 +21,12 @@ public actor WebSocketManager {
     /// Stream of connection state changes
     public let connectionStateStream: AsyncStream<Bool>
     private let connectionStateContinuation: AsyncStream<Bool>.Continuation
+    
+    /// Optional callback for messages (direct call, no Task spawning needed by caller)
+    private var onMessageCallback: (@Sendable (String) async -> Void)?
+    
+    /// Optional callback for disconnection (direct call, no Task spawning needed by caller)
+    private var onDisconnectCallback: (@Sendable () async -> Void)?
 
     // MARK: - Initialization
 
@@ -83,6 +89,24 @@ public actor WebSocketManager {
         // Yield connection state
         connectionStateContinuation.yield(true)
         print("[WebSocketManager] ✅ WebSocket connection successful")
+    }
+    
+    /// Starts receiving messages with callback-based handling (no external Task needed)
+    /// - Parameters:
+    ///   - onMessage: Callback for each received message
+    ///   - onDisconnect: Callback when disconnection occurs
+    public func startReceiving(
+        onMessage: @escaping @Sendable (String) async -> Void,
+        onDisconnect: @escaping @Sendable () async -> Void
+    ) {
+        self.onMessageCallback = onMessage
+        self.onDisconnectCallback = onDisconnect
+    }
+    
+    /// Clears the callback handlers
+    public func clearCallbacks() {
+        self.onMessageCallback = nil
+        self.onDisconnectCallback = nil
     }
 
     /// Disconnects from the WebSocket gracefully
@@ -158,11 +182,21 @@ public actor WebSocketManager {
             switch message {
             case .string(let text):
                 print("[WebSocketManager] 📨 Received text message: \(text.prefix(100))...")
+                // Yield to stream (for backward compatibility)
                 messageContinuation.yield(text)
+                // Call direct callback if set (no Task spawning needed by caller)
+                if let callback = onMessageCallback {
+                    await callback(text)
+                }
             case .data(let data):
                 print("[WebSocketManager] 📨 Received binary message: \(data.count) bytes")
                 if let text = String(data: data, encoding: .utf8) {
+                    // Yield to stream (for backward compatibility)
                     messageContinuation.yield(text)
+                    // Call direct callback if set
+                    if let callback = onMessageCallback {
+                        await callback(text)
+                    }
                 }
             @unknown default:
                 print("[WebSocketManager] ⚠️ Unknown message type received")
@@ -186,12 +220,22 @@ public actor WebSocketManager {
         // Check if this was an intentional disconnect before cleanup
         let wasIntentional = isIntentionalDisconnect
         
-        // Clean up resources first (this will reset flags)
+        // Get callback before cleanup
+        let disconnectCallback = onDisconnectCallback
+        
+        // Clean up resources first (this will reset flags and clear callbacks)
         cleanupResources()
         
         // Only yield connection state change if not already handled by disconnect()
         if !wasIntentional {
             connectionStateContinuation.yield(false)
+            
+            // Call direct callback if set
+            if let callback = disconnectCallback {
+                Task {
+                    await callback()
+                }
+            }
         }
     }
 
@@ -201,6 +245,10 @@ public actor WebSocketManager {
         
         // Reset the intentional disconnect flag early to avoid race conditions
         isIntentionalDisconnect = false
+        
+        // Clear callbacks
+        onMessageCallback = nil
+        onDisconnectCallback = nil
         
         // Clean up network resources
         webSocketTask = nil
