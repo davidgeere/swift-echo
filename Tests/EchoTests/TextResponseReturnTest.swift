@@ -225,11 +225,14 @@ struct TextResponseReturnTest {
         
         let errorTracker = ErrorTracker()
         
-        // Subscribe to error events
-        echo.when(.error) { event in
-            if case let .error(error) = event {
-                if case let EchoError.invalidResponse(msg) = error {
-                    await errorTracker.recordError(msg)
+        // Subscribe to error events using the stream-based API
+        let eventTask = Task {
+            for await event in echo.events {
+                if case let .error(error) = event {
+                    if case let EchoError.invalidResponse(msg) = error {
+                        await errorTracker.recordError(msg)
+                        break
+                    }
                 }
             }
         }
@@ -238,6 +241,10 @@ struct TextResponseReturnTest {
         // Note: This test might not always trigger the incomplete response
         // depending on model behavior, but it verifies the error handling exists
         let response = try await conversation.send("What color is the sky on a clear day?")
+        
+        // Give time for any error event to be processed
+        try await Task.sleep(nanoseconds: 100_000_000)
+        eventTask.cancel()
         
         // If we get a response, that's fine (model behavior varies)
         // If we get nil and an error was emitted, verify the error message

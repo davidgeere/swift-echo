@@ -238,16 +238,27 @@ struct ReasoningEffortTests {
         
         let errorTracker = ErrorTracker()
         
-        echo.when(.error) { event in
-            if case let .error(error) = event {
-                if case let EchoError.invalidResponse(msg) = error {
-                    await errorTracker.recordError(msg)
+        // Start consuming error events from stream
+        let eventTask = Task {
+            for await event in echo.events {
+                if case let .error(error) = event {
+                    if case let EchoError.invalidResponse(msg) = error {
+                        await errorTracker.recordError(msg)
+                        break
+                    }
                 }
             }
         }
         
+        // Wait for stream to be ready
+        try await Task.sleep(nanoseconds: 10_000_000)
+        
         // This prompt with high reasoning and low token limit might cause issues
         let response = try await conversation.send("Explain the theory of relativity in detail")
+        
+        // Wait for error event to propagate
+        try await Task.sleep(nanoseconds: 50_000_000)
+        eventTask.cancel()
         
         let errorState = await errorTracker.getState()
         

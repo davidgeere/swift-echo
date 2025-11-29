@@ -5,6 +5,109 @@ All notable changes to Echo will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2025-11-29
+
+### Breaking Changes
+
+#### Event System Overhaul
+- **Removed `when()` event handler methods** - All `when()` method overloads have been removed from `Echo` and `EventEmitter`
+  - Previously: `echo.when(.userStartedSpeaking) { event in ... }`
+  - Now: `for await event in echo.events { ... }` with switch/case pattern matching
+  - This change eliminates orphaned Tasks and complex cleanup requirements
+
+- **Removed `EventHandler.swift`** - No longer needed with the pure sink architecture
+
+### Added
+
+#### New Event Observation API
+- **AsyncStream-based event observation** - Use `echo.events` to observe all events
+  ```swift
+  Task {
+      for await event in echo.events {
+          switch event {
+          case .userStartedSpeaking:
+              // Handle event
+          case .error(let error):
+              // Handle error
+          default:
+              break
+          }
+      }
+  }
+  ```
+
+#### Internal Architecture
+- **`InternalDelegates.swift`** - New internal protocols for component coordination:
+  - `AudioInterruptible` - For components that can interrupt audio
+  - `ToolExecuting` - For centralized tool execution
+  - `RealtimeClientDelegate` - For RealtimeClient internal events
+  - `TurnManagerDelegate` - For TurnManager coordination
+  - `ToolHandlerProvider` - For custom tool handler injection
+
+- **`ToolExecutor` actor** - Centralized tool execution:
+  - Manages tool registration and execution
+  - Supports both automatic and custom tool handlers
+  - Thread-safe via actor isolation
+
+- **`toolHandler` property on Echo** - For custom tool handling:
+  ```swift
+  echo.toolHandler = { toolCall in
+      // Custom handling
+      return "result"
+  }
+  ```
+
+### Changed
+
+#### EventEmitter
+- Simplified to pure sink pattern (emit-only)
+- Only exposes `events: AsyncStream<EchoEvent>` for external observation
+- Internal components use direct delegate method calls
+
+#### Internal Coordination
+- Components now use delegate patterns instead of event listeners
+- Direct method calls for internal coordination (no Tasks)
+- Deterministic execution flow
+
+### Fixed
+
+#### Memory Management
+- **Eliminated orphaned Task instances** - No more background Tasks for internal event listening
+- **Proper AsyncStream cleanup** - All continuations are properly finished in `deinit`
+- **No complex cleanup requirements** - Components manage their own lifecycle
+
+### Migration Guide
+
+**Before (1.2.x):**
+```swift
+// Single event
+echo.when(.userStartedSpeaking) { event in
+    print("User started speaking")
+}
+
+// Multiple events
+echo.when(.userStartedSpeaking, .userStoppedSpeaking) { event in
+    // Handle events
+}
+```
+
+**After (1.3.0):**
+```swift
+// All events via stream
+Task {
+    for await event in echo.events {
+        switch event {
+        case .userStartedSpeaking:
+            print("User started speaking")
+        case .userStoppedSpeaking:
+            print("User stopped speaking")
+        default:
+            break
+        }
+    }
+}
+```
+
 ## [1.2.2] - 2025-11-23
 
 ### Fixed

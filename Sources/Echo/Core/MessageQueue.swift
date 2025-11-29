@@ -210,4 +210,13 @@ public actor MessageQueue {
     private func removeContinuation(_ id: UUID) {
         continuations.removeValue(forKey: id)
     }
+
+    // MARK: - Cleanup
+
+    deinit {
+        // Finish all continuations to prevent memory leaks
+        for (_, continuation) in continuations {
+            continuation.finish()
+        }
+    }
 }

@@ -17,7 +17,7 @@ public class Echo {
     /// API key for OpenAI
     internal let apiKey: String
 
-    /// Event emitter for the echo.when() syntax
+    /// Event emitter for the events stream
     internal let eventEmitter: EventEmitter
 
     /// Registered tools for function calling
@@ -26,8 +26,36 @@ public class Echo {
     /// Registered MCP servers
     private var mcpServers: [MCPServer] = []
 
-    /// Tool registry actor for thread-safe access from Sendable closures
-    private let toolRegistry = ToolRegistry()
+    /// Tool executor for centralized tool execution
+    internal let toolExecutor: ToolExecutor
+    
+    /// Optional custom tool handler. If nil, tools execute automatically.
+    /// If set, this is called instead of automatic execution.
+    ///
+    /// ## Usage
+    /// ```swift
+    /// echo.toolHandler = { toolCall in
+    ///     // Custom logic before execution
+    ///     if await userApproves(toolCall) {
+    ///         return await executeTool(toolCall)
+    ///     } else {
+    ///         throw ToolError.userDenied
+    ///     }
+    /// }
+    /// ```
+    private var _toolHandler: (@Sendable (ToolCall) async throws -> String)?
+    
+    /// Sets a custom tool handler
+    /// - Parameter handler: The handler to use for tool calls
+    public func setToolHandler(_ handler: (@Sendable (ToolCall) async throws -> String)?) async {
+        _toolHandler = handler
+        await toolExecutor.setCustomHandler(handler)
+    }
+    
+    /// Gets the current tool handler
+    public var toolHandler: (@Sendable (ToolCall) async throws -> String)? {
+        return _toolHandler
+    }
 
     // MARK: - Initialization
 
@@ -35,66 +63,18 @@ public class Echo {
     /// - Parameters:
     ///   - key: OpenAI API key
     ///   - configuration: Optional configuration (uses defaults if not provided)
-    ///   - automaticToolExecution: If true, registered tools execute automatically (default: true)
     public init(
         key: String,
-        configuration: EchoConfiguration = EchoConfiguration(),
-        automaticToolExecution: Bool = true
+        configuration: EchoConfiguration = EchoConfiguration()
     ) {
         self.apiKey = key
         self.configuration = configuration
         self.eventEmitter = EventEmitter()
+        self.toolExecutor = ToolExecutor()
 
         // Log version info on initialization
         if configuration.logLevel != .none {
             print("🔊 \(EchoVersion.full) initialized")
-        }
-        
-        // Set up automatic tool execution if enabled
-        if automaticToolExecution {
-            setupAutomaticToolExecution()
-        }
-    }
-
-    /// Sets up automatic tool execution for registered tools
-    private func setupAutomaticToolExecution() {
-        let emitter = eventEmitter
-        let registry = toolRegistry
-
-        Task {
-            await emitter.when(.toolCallRequested) { event in
-                guard case .toolCallRequested(let toolCall) = event else { return }
-
-                // Look up the tool by name from registry
-                guard let tool = await registry.getTool(named: toolCall.name) else {
-                    // Tool not registered - submit error
-                    print("[Echo] ⚠️  Tool '\(toolCall.name)' not found in registered tools")
-                    await emitter.emit(.toolResultSubmitted(
-                        toolCallId: toolCall.id,
-                        result: "{\"error\": \"Tool '\(toolCall.name)' not registered\"}"
-                    ))
-                    return
-                }
-
-                // Execute the tool
-                print("[Echo] 🔧 Executing tool: \(toolCall.name)")
-                let result = await tool.execute(with: toolCall.arguments, callId: toolCall.id)
-
-                // Submit the result
-                if result.isSuccess {
-                    print("[Echo] ✅ Tool '\(toolCall.name)' executed successfully")
-                    await emitter.emit(.toolResultSubmitted(
-                        toolCallId: result.toolCallId,
-                        result: result.output
-                    ))
-                } else {
-                    print("[Echo] ❌ Tool '\(toolCall.name)' failed: \(result.error ?? "unknown error")")
-                    await emitter.emit(.toolResultSubmitted(
-                        toolCallId: result.toolCallId,
-                        result: "{\"error\": \"\(result.error ?? "unknown error")\"}"
-                    ))
-                }
-            }
         }
     }
 
@@ -120,7 +100,8 @@ public class Echo {
             systemMessage: finalSystemMessage,
             eventEmitter: eventEmitter,
             tools: tools,
-            mcpServers: mcpServers
+            mcpServers: mcpServers,
+            toolExecutor: toolExecutor
         )
     }
 
@@ -163,150 +144,34 @@ public class Echo {
             systemMessage: finalSystemMessage,
             eventEmitter: eventEmitter,
             tools: tools,
-            mcpServers: mcpServers
+            mcpServers: mcpServers,
+            toolExecutor: toolExecutor
         )
-    }
-
-    // MARK: - Event Registration
-
-    /// Registers a synchronous event handler
-    /// - Parameters:
-    ///   - eventType: The type of event to listen for
-    ///   - handler: The handler closure to call when the event occurs
-    public func when(
-        _ eventType: EventType,
-        handler: @escaping @Sendable (EchoEvent) -> Void
-    ) {
-        let emitter = eventEmitter
-        Task {
-            await emitter.when(eventType, handler: handler)
-        }
-    }
-
-    /// Registers an asynchronous event handler
-    /// - Parameters:
-    ///   - eventType: The type of event to listen for
-    ///   - asyncHandler: The async handler closure to call when the event occurs
-    public func when(
-        _ eventType: EventType,
-        asyncHandler: @escaping @Sendable (EchoEvent) async -> Void
-    ) {
-        let emitter = eventEmitter
-        Task {
-            await emitter.when(eventType, asyncHandler: asyncHandler)
-        }
-    }
-
-    /// Registers a synchronous event handler for multiple event types
-    /// - Parameters:
-    ///   - eventTypes: Array of event types to listen for
-    ///   - handler: The handler closure to call when any of the events occur
-    public func when(
-        _ eventTypes: [EventType],
-        handler: @escaping @Sendable (EchoEvent) -> Void
-    ) {
-        let emitter = eventEmitter
-        Task {
-            await emitter.when(eventTypes, handler: handler)
-        }
-    }
-
-    /// Registers an asynchronous event handler for multiple event types
-    /// - Parameters:
-    ///   - eventTypes: Array of event types to listen for
-    ///   - asyncHandler: The async handler closure to call when any of the events occur
-    public func when(
-        _ eventTypes: [EventType],
-        asyncHandler: @escaping @Sendable (EchoEvent) async -> Void
-    ) {
-        let emitter = eventEmitter
-        Task {
-            await emitter.when(eventTypes, asyncHandler: asyncHandler)
-        }
-    }
-
-    /// Registers a synchronous event handler for multiple event types (variadic)
-    /// - Parameters:
-    ///   - eventTypes: Variadic list of event types to listen for
-    ///   - handler: The handler closure to call when any of the events occur
-    public func when(
-        _ eventTypes: EventType...,
-        handler: @escaping @Sendable (EchoEvent) -> Void
-    ) {
-        when(eventTypes, handler: handler)
-    }
-
-    /// Registers an asynchronous event handler for multiple event types (variadic)
-    /// - Parameters:
-    ///   - eventTypes: Variadic list of event types to listen for
-    ///   - asyncHandler: The async handler closure to call when any of the events occur
-    public func when(
-        _ eventTypes: EventType...,
-        asyncHandler: @escaping @Sendable (EchoEvent) async -> Void
-    ) {
-        when(eventTypes, asyncHandler: asyncHandler)
-    }
-
-    // MARK: - All Events Handler
-
-    /// Registers a synchronous handler for ALL events
-    /// Returns immediately; handlers execute in background when events occur
-    /// - Parameter handler: The handler closure to call for every event
-    /// - Note: Handlers are automatically cleaned up when Echo is deallocated.
-    ///        Be careful not to capture `self` or other objects that might create retain cycles.
-    public func when(
-        handler: @escaping @Sendable (EchoEvent) -> Void
-    ) {
-        let emitter = eventEmitter
-        Task {
-            await emitter.when(EventType.allCases, handler: handler)
-        }
-    }
-
-    /// Registers a synchronous handler for ALL events (async version)
-    /// Use this when you want to ensure registration completes before continuing
-    /// - Parameter handler: The handler closure to call for every event
-    /// - Returns: Array of handler IDs (one per event type) that can be used to remove handlers later
-    /// - Note: Be careful not to capture `self` or other objects that might create retain cycles.
-    @discardableResult
-    public func when(
-        handler: @escaping @Sendable (EchoEvent) -> Void
-    ) async -> [UUID] {
-        let emitter = eventEmitter
-        return await emitter.when(EventType.allCases, handler: handler)
-    }
-
-    /// Registers an asynchronous handler for ALL events
-    /// Returns immediately; handlers execute in background when events occur
-    /// - Parameter asyncHandler: The async handler closure to call for every event
-    /// - Note: Handlers are automatically cleaned up when Echo is deallocated.
-    ///        Be careful not to capture `self` or other objects that might create retain cycles.
-    public func when(
-        asyncHandler: @escaping @Sendable (EchoEvent) async -> Void
-    ) {
-        let emitter = eventEmitter
-        Task {
-            await emitter.when(EventType.allCases, asyncHandler: asyncHandler)
-        }
-    }
-
-    /// Registers an asynchronous handler for ALL events (async version)
-    /// Use this when you want to ensure registration completes before continuing
-    /// - Parameter asyncHandler: The async handler closure to call for every event
-    /// - Returns: Array of handler IDs (one per event type) that can be used to remove handlers later
-    /// - Note: Be careful not to capture `self` or other objects that might create retain cycles.
-    @discardableResult
-    public func when(
-        asyncHandler: @escaping @Sendable (EchoEvent) async -> Void
-    ) async -> [UUID] {
-        let emitter = eventEmitter
-        return await emitter.when(EventType.allCases, asyncHandler: asyncHandler)
     }
 
     // MARK: - Events Stream
 
     /// Stream of all emitted events
     /// Use this to observe all events sequentially: `for await event in echo.events { ... }`
+    ///
+    /// ## Usage
+    /// ```swift
+    /// Task {
+    ///     for await event in echo.events {
+    ///         switch event {
+    ///         case .userStartedSpeaking:
+    ///             updateUI()
+    ///         case .assistantStoppedSpeaking:
+    ///             // Handle response complete
+    ///         case .error(let error):
+    ///             handleError(error)
+    ///         default:
+    ///             break
+    ///         }
+    ///     }
+    /// }
+    /// ```
+    ///
     /// - Note: This creates an async sequence that yields events as they occur.
     ///        You can break out of the loop when done processing events.
     public var events: AsyncStream<EchoEvent> {
@@ -317,42 +182,10 @@ public class Echo {
 
     /// Registers a tool/function that can be called by the model
     /// - Parameter tool: The tool to register
-    public func registerTool(_ tool: Tool) {
+    public func registerTool(_ tool: Tool) async {
         tools.append(tool)
-        // Also register in the actor for Sendable access
-        let registry = toolRegistry
-        Task {
-            await registry.register(tool)
-        }
-    }
-
-    /// Registers a manual handler for tool calls (overrides automatic execution)
-    /// Use this to intercept tool calls for approval, custom logic, etc.
-    /// - Parameter handler: The handler closure that receives the tool call and returns output string
-    /// - Note: When this is used, automatic tool execution is bypassed for intercepted calls
-    public func when(
-        call handler: @escaping @Sendable (ToolCall) async throws -> String
-    ) {
-        let emitter = eventEmitter
-        Task {
-            await emitter.when(.toolCallRequested) { event in
-                guard case .toolCallRequested(let toolCall) = event else { return }
-                do {
-                    let output = try await handler(toolCall)
-                    // Emit tool result with correct call_id
-                    await emitter.emit(.toolResultSubmitted(
-                        toolCallId: toolCall.id,  // ✅ Use actual call ID
-                        result: output
-                    ))
-                } catch {
-                    // Submit error with correct call_id
-                    await emitter.emit(.toolResultSubmitted(
-                        toolCallId: toolCall.id,  // ✅ Use actual call ID
-                        result: "{\"error\": \"\(error.localizedDescription)\"}"
-                    ))
-                }
-            }
-        }
+        // Also register in the tool executor
+        await toolExecutor.register(tool)
     }
 
     /// Manually submit a tool result (for advanced use cases)
@@ -387,21 +220,6 @@ public class Echo {
     /// Returns all registered MCP servers
     internal func getMCPServers() -> [MCPServer] {
         return mcpServers
-    }
-}
-
-// MARK: - Tool Registry Actor
-
-/// Actor for thread-safe tool registry access from Sendable closures
-actor ToolRegistry {
-    private var tools: [Tool] = []
-
-    func register(_ tool: Tool) {
-        tools.append(tool)
-    }
-
-    func getTool(named name: String) -> Tool? {
-        return tools.first(where: { $0.name == name })
     }
 }
 
@@ -531,6 +349,7 @@ extension Echo {
             eventEmitter: eventEmitter,
             tools: tools,
             mcpServers: mcpServers,
+            toolExecutor: toolExecutor,
             audioCaptureFactory: audioCaptureFactory,
             audioPlaybackFactory: audioPlaybackFactory
         )

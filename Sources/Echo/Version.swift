@@ -11,7 +11,7 @@ import Foundation
 /// Echo library version information
 public enum EchoVersion {
     /// Current version of the Echo library
-    public static let current = Version(major: 1, minor: 2, patch: 2)
+    public static let current = Version(major: 1, minor: 3, patch: 0)
     
     /// Version string (e.g., "1.0.0")
     public static var string: String {
@@ -25,7 +25,7 @@ public enum EchoVersion {
     
     /// Build information
     public static let build = BuildInfo(
-        date: "2025-11-23",
+        date: "2025-11-29",
         commit: "main"
     )
 }
@@ -81,6 +81,35 @@ public struct BuildInfo: Sendable {
 extension EchoVersion {
     /// Version history with release notes
     public static let history: [(version: Version, date: String, notes: String)] = [
+        (
+            version: Version(major: 1, minor: 3, patch: 0),
+            date: "2025-11-29",
+            notes: """
+            🏗️ Architecture Refactor: Event Decoupling
+            
+            Breaking Changes:
+            • Removed all when() event handler methods from Echo and EventEmitter
+            • Event observation now uses AsyncStream: for await event in echo.events { ... }
+            • Added toolHandler property for custom tool handling (replaces automatic setup)
+            
+            New Features:
+            • Pure sink EventEmitter - cleaner architecture with no internal event listeners
+            • Centralized ToolExecutor actor for all tool execution
+            • Internal delegate protocols for component coordination
+            • Direct method calls between components (no orphaned Tasks)
+            
+            Memory & Resource Improvements:
+            • Eliminated orphaned Task instances that could cause memory leaks
+            • Proper cleanup in deinit for all AsyncStream continuations
+            • No more complex cleanup requirements - components manage their own lifecycle
+            • Deterministic execution flow without background Tasks for internal coordination
+            
+            Architecture:
+            • Strict separation: internal coordination (delegates) vs external observation (stream)
+            • New protocols: AudioInterruptible, ToolExecuting, RealtimeClientDelegate, TurnManagerDelegate
+            • MessageQueue cleanup with deinit for continuations
+            """
+        ),
         (
             version: Version(major: 1, minor: 2, patch: 2),
             date: "2025-11-23",
