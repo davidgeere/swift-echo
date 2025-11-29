@@ -8,7 +8,7 @@ import AVFoundation
 #endif
 
 /// Main client for interacting with the Realtime API via WebSocket
-public actor RealtimeClient {
+public actor RealtimeClient: TurnManagerDelegate {
     // MARK: - Properties
 
     private let apiKey: String
@@ -17,7 +17,13 @@ public actor RealtimeClient {
     private let tools: [Tool]
     private let mcpServers: [MCPServer]
 
-    // CRITICAL FIX: Add TurnManager for proper event routing
+    // Delegate for internal coordination (direct calls instead of events)
+    private weak var delegate: (any RealtimeClientDelegate)?
+
+    // Tool executor for centralized tool execution
+    private var toolExecutor: (any ToolExecuting)?
+
+    // TurnManager for proper event routing
     private let turnManager: TurnManager?
 
     private var webSocket: WebSocketManager
@@ -42,6 +48,11 @@ public actor RealtimeClient {
     private var currentAssistantItemId: String?
     private var currentAssistantText: String = ""
 
+    // Stored for cleanup
+    #if os(iOS)
+    private var routeChangeObserver: NSObjectProtocol?
+    #endif
+
     // MARK: - Initialization
 
     /// Creates a Realtime API client
@@ -52,6 +63,8 @@ public actor RealtimeClient {
     ///   - tools: Registered tools for function calling
     ///   - mcpServers: Registered MCP servers
     ///   - turnManager: Optional TurnManager for managing speaking turns
+    ///   - toolExecutor: Optional ToolExecutor for executing tools
+    ///   - delegate: Optional delegate for internal coordination
     ///   - audioCaptureFactory: Optional factory for creating audio capture (for testing)
     ///   - audioPlaybackFactory: Optional factory for creating audio playback (for testing)
     public init(
@@ -61,6 +74,8 @@ public actor RealtimeClient {
         tools: [Tool] = [],
         mcpServers: [MCPServer] = [],
         turnManager: TurnManager? = nil,
+        toolExecutor: (any ToolExecuting)? = nil,
+        delegate: (any RealtimeClientDelegate)? = nil,
         audioCaptureFactory: (@Sendable () async -> any AudioCaptureProtocol)? = nil,
         audioPlaybackFactory: (@Sendable () async -> any AudioPlaybackProtocol)? = nil
     ) {
@@ -70,25 +85,40 @@ public actor RealtimeClient {
         self.tools = tools
         self.mcpServers = mcpServers
         self.turnManager = turnManager
+        self.toolExecutor = toolExecutor
+        self.delegate = delegate
         self.webSocket = WebSocketManager()
         self.audioCaptureFactory = audioCaptureFactory
         self.audioPlaybackFactory = audioPlaybackFactory
 
-        // Listen for assistant interruption events to stop audio playback
+        // Wire up TurnManager delegate to self for interruption handling
         Task {
-            await eventEmitter.when(.assistantInterrupted) { [weak self] _ in
-                await self?.stopAudioPlayback()
-            }
-        }
-
-        // Listen for tool result submissions and send them to OpenAI
-        Task {
-            await eventEmitter.when(.toolResultSubmitted) { [weak self] event in
-                guard case .toolResultSubmitted(let toolCallId, let result) = event else { return }
-                await self?.submitToolResult(toolCallId: toolCallId, output: result)
-            }
+            await turnManager?.setDelegate(self)
         }
     }
+
+    // MARK: - Delegate Management
+
+    /// Sets the delegate for internal coordination
+    /// - Parameter delegate: The delegate to set
+    public func setDelegate(_ delegate: (any RealtimeClientDelegate)?) {
+        self.delegate = delegate
+    }
+
+    /// Sets the tool executor for tool execution
+    /// - Parameter executor: The tool executor to use
+    public func setToolExecutor(_ executor: (any ToolExecuting)?) {
+        self.toolExecutor = executor
+    }
+
+    // MARK: - TurnManagerDelegate
+
+    /// Called by TurnManager when interruption is requested
+    public func turnManagerDidRequestInterruption(_ manager: TurnManager) async {
+        await stopAudioPlayback()
+    }
+
+    // MARK: - Audio Control
 
     /// Stops audio playback (for interruptions)
     private func stopAudioPlayback() async {
@@ -99,7 +129,7 @@ public actor RealtimeClient {
     /// - Parameters:
     ///   - toolCallId: The tool call ID
     ///   - output: The tool result output
-    private func submitToolResult(toolCallId: String, output: String) async {
+    public func submitToolResult(toolCallId: String, output: String) async {
         do {
             // Create conversation item with function call output
             let outputItem: [String: Any] = [
@@ -197,6 +227,14 @@ public actor RealtimeClient {
         // Stop audio
         await stopAudio()
 
+        // Remove notification observer
+        #if os(iOS)
+        if let observer = routeChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            routeChangeObserver = nil
+        }
+        #endif
+
         // Close WebSocket
         await webSocket.disconnect()
 
@@ -272,9 +310,7 @@ public actor RealtimeClient {
 
             // Set up route change observer for audio output changes
             #if os(iOS)
-            Task { [weak self] in
-                await self?.observeAudioRouteChanges()
-            }
+            await observeAudioRouteChanges()
             #endif
 
             // Emit audio started event after both capture and playback are ready
@@ -531,10 +567,13 @@ public actor RealtimeClient {
         // Audio buffer committed - creates message slot
         case .inputAudioBufferCommitted(let itemId, _):
             currentUserItemId = itemId
+            // Notify delegate directly
+            await delegate?.realtimeClient(self, didCommitAudioBuffer: itemId)
+            // Also emit event for external observers
             await eventEmitter.emit(.userAudioBufferCommitted(itemId: itemId))
 
         // Speech detection
-        // CRITICAL FIX: Route VAD events through TurnManager
+        // Route VAD events through TurnManager
         case .inputAudioBufferSpeechStarted:
             // Stop assistant playback when user starts speaking
             await audioPlayback?.interrupt()
@@ -546,6 +585,9 @@ public actor RealtimeClient {
             if let turnManager = turnManager {
                 await turnManager.handleUserStartedSpeaking()
             } else {
+                // Notify delegate directly
+                await delegate?.realtimeClientDidDetectUserSpeech(self)
+                // Also emit event for external observers
                 await eventEmitter.emit(.userStartedSpeaking)
             }
 
@@ -557,13 +599,18 @@ public actor RealtimeClient {
             if let turnManager = turnManager {
                 await turnManager.handleUserStoppedSpeaking()
             } else {
+                // Notify delegate directly
+                await delegate?.realtimeClientDidDetectUserSilence(self)
+                // Also emit event for external observers
                 await eventEmitter.emit(.userStoppedSpeaking)
             }
 
         // Transcription
         case .conversationItemInputAudioTranscriptionCompleted(let itemId, let transcript):
             currentTranscripts[itemId] = transcript
-
+            // Notify delegate directly
+            await delegate?.realtimeClient(self, didReceiveTranscript: transcript, itemId: itemId)
+            // Also emit event for external observers
             await eventEmitter.emit(.userTranscriptionCompleted(transcript: transcript, itemId: itemId))
 
         // Audio response
@@ -609,6 +656,9 @@ public actor RealtimeClient {
         case .responseOutputItemAdded(_, _, let item):
             // Track the assistant's response item ID
             currentAssistantItemId = item.id
+            // Notify delegate directly
+            await delegate?.realtimeClient(self, didStartAssistantResponse: item.id)
+            // Also emit event for external observers
             await eventEmitter.emit(.assistantResponseCreated(itemId: item.id))
 
         case .responseDone:
@@ -624,6 +674,9 @@ public actor RealtimeClient {
 
             // Emit response done with complete text
             if let itemId = currentAssistantItemId {
+                // Notify delegate directly
+                await delegate?.realtimeClient(self, didReceiveAssistantResponse: currentAssistantText, itemId: itemId)
+                // Also emit event for external observers
                 await eventEmitter.emit(.assistantResponseDone(itemId: itemId, text: currentAssistantText))
                 // Clear for next response
                 currentAssistantItemId = nil
@@ -636,7 +689,19 @@ public actor RealtimeClient {
             let argumentsData = argumentsString.data(using: .utf8) ?? Data()
             let arguments = (try? SendableJSON.from(data: argumentsData)) ?? .null
             let toolCall = ToolCall(id: callId, name: name, arguments: arguments)
+            
+            // Emit event for external observers
             await eventEmitter.emit(.toolCallRequested(toolCall: toolCall))
+            
+            // Execute tool via executor if available, otherwise notify delegate
+            if let executor = toolExecutor {
+                let result = await executor.execute(toolCall: toolCall)
+                // Submit the result back to OpenAI
+                await submitToolResult(toolCallId: result.toolCallId, output: result.output)
+            } else {
+                // Notify delegate directly for custom handling
+                await delegate?.realtimeClient(self, didReceiveToolCall: toolCall)
+            }
 
         // Rate limits
         case .rateLimitsUpdated(_):
@@ -675,8 +740,8 @@ public actor RealtimeClient {
     private func observeAudioRouteChanges() async {
         let notificationCenter = NotificationCenter.default
         
-        // Set up observer for route changes
-        notificationCenter.addObserver(
+        // Store observer for cleanup
+        routeChangeObserver = notificationCenter.addObserver(
             forName: AVAudioSession.routeChangeNotification,
             object: nil,
             queue: nil

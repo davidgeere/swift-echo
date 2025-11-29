@@ -33,7 +33,7 @@ struct ToolChoiceFixTest {
                 return "Weather data for \(location)"
             }
         )
-        echo.registerTool(weatherTool)
+        await echo.registerTool(weatherTool)
         
         // Test: Simple greeting should NOT force tool use
         print("\n📝 Test: Simple greeting without tool use...")

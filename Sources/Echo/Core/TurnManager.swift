@@ -40,8 +40,11 @@ public actor TurnManager {
     /// Turn management mode
     private(set) var mode: TurnMode
 
-    /// Event emitter for publishing turn changes
+    /// Event emitter for publishing turn changes (for external notifications)
     private let eventEmitter: EventEmitter
+
+    /// Delegate for internal coordination (direct calls instead of events)
+    private weak var delegate: (any TurnManagerDelegate)?
 
     /// Timer task for manual mode timeouts
     private var turnTimer: Task<Void, Never>?
@@ -52,9 +55,23 @@ public actor TurnManager {
     /// - Parameters:
     ///   - mode: The turn management mode
     ///   - eventEmitter: Event emitter for publishing events
-    public init(mode: TurnMode, eventEmitter: EventEmitter) {
+    ///   - delegate: Optional delegate for internal coordination
+    public init(
+        mode: TurnMode,
+        eventEmitter: EventEmitter,
+        delegate: (any TurnManagerDelegate)? = nil
+    ) {
         self.mode = mode
         self.eventEmitter = eventEmitter
+        self.delegate = delegate
+    }
+
+    // MARK: - Delegate Management
+
+    /// Sets the delegate for internal coordination
+    /// - Parameter delegate: The delegate to set
+    public func setDelegate(_ delegate: (any TurnManagerDelegate)?) {
+        self.delegate = delegate
     }
 
     // MARK: - Turn Management
@@ -69,13 +86,16 @@ public actor TurnManager {
         currentSpeaker = .user
         turnTimer?.cancel()
 
-        // Emit BOTH events - specific and turn change
+        // Emit events for external observers (side-effect notifications)
         await eventEmitter.emit(.userStartedSpeaking)
         await eventEmitter.emit(.turnChanged(speaker: .user))
 
-        // Interrupt assistant if needed
+        // Handle assistant interruption via delegate (direct call) instead of event
         if case .automatic = mode {
             if wasAssistantSpeaking {
+                // Notify delegate directly for internal coordination
+                await delegate?.turnManagerDidRequestInterruption(self)
+                // Also emit event for external observers
                 await eventEmitter.emit(.assistantInterrupted)
             }
         }
@@ -85,7 +105,7 @@ public actor TurnManager {
     public func handleUserStoppedSpeaking() async {
         guard currentSpeaker == .user else { return }
 
-        // Emit event
+        // Emit event for external observers
         await eventEmitter.emit(.userStoppedSpeaking)
 
         switch mode {
@@ -119,7 +139,7 @@ public actor TurnManager {
         currentSpeaker = .assistant
         turnTimer?.cancel()
 
-        // Emit BOTH events - specific and turn change
+        // Emit events for external observers
         await eventEmitter.emit(.assistantStartedSpeaking)
         await eventEmitter.emit(.turnChanged(speaker: .assistant))
     }
@@ -130,6 +150,7 @@ public actor TurnManager {
 
         currentSpeaker = .none
 
+        // Emit events for external observers
         await eventEmitter.emit(.assistantStoppedSpeaking)
         await eventEmitter.emit(.turnChanged(speaker: .none))
     }
@@ -152,6 +173,9 @@ public actor TurnManager {
         currentSpeaker = .none
         turnTimer?.cancel()
 
+        // Notify delegate directly for internal coordination
+        await delegate?.turnManagerDidRequestInterruption(self)
+        // Also emit event for external observers
         await eventEmitter.emit(.assistantInterrupted)
     }
 
@@ -166,5 +190,11 @@ public actor TurnManager {
     /// - Returns: The current speaker
     public func getCurrentSpeaker() -> Speaker {
         return currentSpeaker
+    }
+
+    // MARK: - Cleanup
+
+    deinit {
+        turnTimer?.cancel()
     }
 }

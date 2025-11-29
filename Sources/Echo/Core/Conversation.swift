@@ -8,7 +8,7 @@ import Observation
 /// Manages a single conversation with seamless mode switching between audio and text
 @MainActor
 @Observable
-public class Conversation {
+public class Conversation: RealtimeClientDelegate {
     // MARK: - Properties
 
     /// Unique conversation ID
@@ -47,6 +47,9 @@ public class Conversation {
     /// Registered MCP servers
     private let mcpServers: [MCPServer]
 
+    /// Tool executor for centralized tool execution
+    private let toolExecutor: ToolExecutor
+
     /// Optional audio capture factory for testing
     private let audioCaptureFactory: (@Sendable () async -> any AudioCaptureProtocol)?
 
@@ -84,6 +87,7 @@ public class Conversation {
     ///   - eventEmitter: Event emitter for publishing events
     ///   - tools: Registered tools for function calling
     ///   - mcpServers: Registered MCP servers
+    ///   - toolExecutor: Tool executor for executing tools
     ///   - audioCaptureFactory: Optional factory for creating audio capture (for testing)
     ///   - audioPlaybackFactory: Optional factory for creating audio playback (for testing)
     init(
@@ -94,6 +98,7 @@ public class Conversation {
         eventEmitter: EventEmitter,
         tools: [Tool] = [],
         mcpServers: [MCPServer] = [],
+        toolExecutor: ToolExecutor,
         audioCaptureFactory: (@Sendable () async -> any AudioCaptureProtocol)? = nil,
         audioPlaybackFactory: (@Sendable () async -> any AudioPlaybackProtocol)? = nil
     ) async throws {
@@ -105,6 +110,7 @@ public class Conversation {
         self.eventEmitter = eventEmitter
         self.mcpServers = mcpServers
         self.tools = tools
+        self.toolExecutor = toolExecutor
         self.messageQueue = MessageQueue(eventEmitter: eventEmitter)
         self.audioCaptureFactory = audioCaptureFactory
         self.audioPlaybackFactory = audioPlaybackFactory
@@ -122,7 +128,6 @@ public class Conversation {
 
     private func initializeAudioMode() async throws {
         // Create turn manager with proper mode handling
-        // CRITICAL FIX: Support manual mode instead of coercing to .disabled
         let turnMode: TurnManager.TurnMode
         switch configuration.turnDetection {
         case .automatic(let vad):
@@ -136,34 +141,32 @@ public class Conversation {
         turnManager = TurnManager(mode: turnMode, eventEmitter: eventEmitter)
 
         // Create Realtime client configuration with systemMessage
-        // CRITICAL FIX: Pass systemMessage as instructions instead of nil
         let realtimeConfig = RealtimeClientConfiguration(
             model: configuration.realtimeModel,
             voice: configuration.voice,
             audioFormat: configuration.audioFormat,
             turnDetection: configuration.turnDetection,
-            instructions: systemMessage,  // ✅ FIXED: Use actual systemMessage
+            instructions: systemMessage,
             enableTranscription: configuration.enableTranscription,
             startAudioAutomatically: true,
             temperature: configuration.temperature,
             maxOutputTokens: configuration.maxTokens
         )
 
-        // CRITICAL FIX: Pass TurnManager to RealtimeClient for event routing
-        // Also pass audio factories for dependency injection (testing)
+        // Create RealtimeClient with delegate (self) for direct calls
+        // No more event listener Tasks needed!
         let client = RealtimeClient(
             apiKey: apiKey,
             configuration: realtimeConfig,
             eventEmitter: eventEmitter,
             tools: tools,
             mcpServers: mcpServers,
-            turnManager: turnManager,  // ✅ Wire TurnManager into event flow
-            audioCaptureFactory: audioCaptureFactory,  // ✅ Enable mock audio for testing
-            audioPlaybackFactory: audioPlaybackFactory  // ✅ Enable mock audio for testing
+            turnManager: turnManager,
+            toolExecutor: toolExecutor,
+            delegate: self,  // Wire self as delegate for direct calls
+            audioCaptureFactory: audioCaptureFactory,
+            audioPlaybackFactory: audioPlaybackFactory
         )
-
-        // Set up event listeners for MessageQueue population
-        setupAudioModeEventListeners()
 
         // Connect and start session - this may throw
         do {
@@ -185,8 +188,68 @@ public class Conversation {
         )
         responsesClient = client
 
-        // Set up event listeners for text mode
-        setupTextModeEventListeners()
+        // No event listeners needed in text mode
+        // Messages are added directly to the queue by ResponsesClient
+    }
+
+    // MARK: - RealtimeClientDelegate
+
+    /// Called when a tool call is received from the model
+    public nonisolated func realtimeClient(_ client: RealtimeClient, didReceiveToolCall call: ToolCall) async {
+        // Tool calls are handled by the ToolExecutor in RealtimeClient
+        // This delegate method is for custom handling if needed
+    }
+
+    /// Called when user speech is detected
+    public nonisolated func realtimeClientDidDetectUserSpeech(_ client: RealtimeClient) async {
+        // Speech detection is handled by TurnManager
+        // This is a fallback if TurnManager is not available
+    }
+
+    /// Called when user silence is detected
+    public nonisolated func realtimeClientDidDetectUserSilence(_ client: RealtimeClient) async {
+        // Silence detection is handled by TurnManager
+        // This is a fallback if TurnManager is not available
+    }
+
+    /// Called when a user transcript is completed
+    public nonisolated func realtimeClient(_ client: RealtimeClient, didReceiveTranscript transcript: String, itemId: String) async {
+        // Update the message queue with the transcript
+        print("[Conversation] 📝 Received user transcript - itemId: \(itemId), text: '\(transcript)'")
+        await messageQueue.updateTranscript(id: itemId, transcript: transcript)
+    }
+
+    /// Called when an assistant response is started
+    public nonisolated func realtimeClient(_ client: RealtimeClient, didStartAssistantResponse itemId: String) async {
+        // Create assistant message slot in the queue
+        print("[Conversation] 🤖 Creating assistant message slot - itemId: \(itemId)")
+        await messageQueue.enqueue(
+            id: itemId,
+            role: .assistant,
+            text: nil,
+            audioData: nil,
+            transcriptStatus: .inProgress
+        )
+    }
+
+    /// Called when an assistant response is completed
+    public nonisolated func realtimeClient(_ client: RealtimeClient, didReceiveAssistantResponse text: String, itemId: String) async {
+        // Finalize the assistant message in the queue
+        print("[Conversation] ✅ Finalizing assistant message - itemId: \(itemId), text: '\(text)'")
+        await messageQueue.updateTranscript(id: itemId, transcript: text)
+    }
+
+    /// Called when user audio buffer is committed
+    public nonisolated func realtimeClient(_ client: RealtimeClient, didCommitAudioBuffer itemId: String) async {
+        // Create user message slot in the queue
+        print("[Conversation] 📦 Creating user message slot - itemId: \(itemId)")
+        await messageQueue.enqueue(
+            id: itemId,
+            role: .user,
+            text: nil,
+            audioData: nil,
+            transcriptStatus: .inProgress
+        )
     }
 
     // MARK: - Sending Messages
@@ -260,7 +323,7 @@ public class Conversation {
             allResponsesTools.append(contentsOf: tools.map { $0.toResponsesTool() })
             allResponsesTools.append(contentsOf: mcpServers.map { $0.toResponsesTool() })
 
-            // CRITICAL FIX: Wait for stream completion using continuation
+            // Wait for stream completion using continuation
             let assistantMessage = await withCheckedContinuation { (continuation: CheckedContinuation<Message?, Never>) in
                 Task {
                     await client.withStreamResponse(
@@ -312,7 +375,6 @@ public class Conversation {
                                         }
                                     } else if type == "response.incomplete" {
                                         // Handle incomplete responses (e.g., reasoning-only responses)
-                                        // This can happen with certain prompts that trigger extended reasoning
                                         await eventEmitter.emit(.error(error: EchoError.invalidResponse(
                                             "Response was incomplete - the model returned only reasoning without a text response. Try rephrasing your question or adjusting reasoning effort."
                                         )))
@@ -407,7 +469,6 @@ public class Conversation {
                 )
                 
                 // Try to extract text from the response
-                // In JSON mode, we might not get a message with text but we still get content
                 var responseText: String? = response.firstText
                 
                 // If no text found via firstText, try to extract from output items
@@ -445,7 +506,6 @@ public class Conversation {
                 return nil
             } else {
                 // Streaming mode (default behavior)
-                // CRITICAL FIX: Wait for stream completion using continuation
                 let assistantMessage = await withCheckedContinuation { (continuation: CheckedContinuation<Message?, Never>) in
                     Task {
                         await client.withStreamResponse(
@@ -496,8 +556,7 @@ public class Conversation {
                                                 }
                                             }
                                         } else if type == "response.incomplete" {
-                                            // Handle incomplete responses (e.g., reasoning-only responses)
-                                            // This can happen with certain prompts that trigger extended reasoning
+                                            // Handle incomplete responses
                                             await eventEmitter.emit(.error(error: EchoError.invalidResponse(
                                                 "Response was incomplete - the model returned only reasoning without a text response. Try rephrasing your question."
                                             )))
@@ -541,8 +600,6 @@ public class Conversation {
     // MARK: - Stream Processing
 
     /// Processes the response stream from Responses API
-    /// This must be nonisolated to avoid MainActor isolation conflicts
-    /// We isolate the stream processing to the client actor to avoid Sendable issues
     nonisolated private static func processResponseStream(
         client: ResponsesClient,
         model: ResponsesModel,
@@ -555,8 +612,6 @@ public class Conversation {
         maxOutputTokens: Int?,
         responseFormat: ResponseFormat? = nil
     ) async {
-        // Process the stream isolated to the client actor
-        // This avoids the non-Sendable AsyncThrowingStream crossing actor boundaries
         await client.withStreamResponse(
             model: model,
             input: history,
@@ -565,16 +620,13 @@ public class Conversation {
             temperature: temperature,
             maxOutputTokens: maxOutputTokens
         ) { stream in
-            // Process stream events
             var assistantText = ""
             do {
                 for try await event in stream {
                     switch event {
                     case .responseDelta(let delta):
-                        // Accumulate text
                         assistantText += delta
                     case .responseDone(_):
-                        // Add complete message to queue
                         if !assistantText.isEmpty {
                             await messageQueue.enqueue(
                                 role: .assistant,
@@ -584,12 +636,10 @@ public class Conversation {
                             )
                         }
                     default:
-                        // Other events are handled elsewhere
                         break
                     }
                 }
             } catch {
-                // Stream error - emit error event
                 await emitter.emit(.error(error: error))
             }
         }
@@ -619,34 +669,31 @@ public class Conversation {
     }
 
     private func transitionAudioToText() async throws {
-        // 2. Disconnect Realtime WebSocket
+        // Disconnect Realtime WebSocket
         await realtimeClient?.disconnect()
         realtimeClient = nil
         turnManager = nil
 
-        // 3. Initialize Responses client
+        // Initialize Responses client
         try await initializeTextMode()
-
-        // Context is already preserved in MessageQueue as text transcripts
     }
 
     private func transitionTextToAudio() async throws {
-        // 1. Get conversation history
+        // Get conversation history
         let messages = await messageQueue.getOrderedMessages()
 
-        // 2. Initialize Realtime WebSocket FIRST (before destroying responses client)
+        // Initialize Realtime WebSocket FIRST (before destroying responses client)
         try await initializeAudioMode()
 
-        // 3. Clean up Responses client only AFTER successful audio initialization
+        // Clean up Responses client only AFTER successful audio initialization
         responsesClient = nil
 
-        // 4. Inject history into Realtime API
+        // Inject history into Realtime API
         guard let client = realtimeClient else {
             throw EchoError.clientNotInitialized("Realtime client not initialized after initialization")
         }
         
         // Send each message as a conversation item
-        // CRITICAL: Realtime API expects "input_text" for user messages and "text" for assistant messages
         for message in messages {
             let contentType = message.role == .user ? "input_text" : "text"
             let itemDict: [String: Any] = [
@@ -663,8 +710,6 @@ public class Conversation {
             let sendableItem = try SendableJSON.from(dictionary: itemDict)
             try await client.send(.conversationItemCreate(item: sendableItem, previousItemId: nil))
         }
-
-        // Ready for audio interaction with full context
     }
 
     // MARK: - Audio Control
@@ -726,10 +771,8 @@ public class Conversation {
             throw EchoError.invalidMode("Cannot end turn in text mode")
         }
 
-        // CRITICAL FIX: Only commit audio buffer in manual mode
-        // In automatic mode, VAD drives the commits - manual calls should be no-ops
+        // Only commit audio buffer in manual mode
         guard case .manual = configuration.turnDetection else {
-            // In automatic mode, don't manually commit - VAD handles it
             return
         }
 
@@ -795,77 +838,9 @@ public class Conversation {
         try await client.send(.sessionUpdate(session: sessionJSON))
     }
 
-    // MARK: - Event Listeners
-
-    /// Sets up event listeners for audio mode MessageQueue population
-    private func setupAudioModeEventListeners() {
-        let queue = messageQueue
-        let emitter = eventEmitter
-
-        // Listen for user audio buffer committed - creates message slot
-        Task {
-            await emitter.when(.userAudioBufferCommitted) { event in
-                if case .userAudioBufferCommitted(let itemId) = event {
-                    print("[Conversation] 📦 Creating user message slot - itemId: \(itemId)")
-                    await queue.enqueue(
-                        id: itemId,
-                        role: .user,
-                        text: nil,
-                        audioData: nil,
-                        transcriptStatus: .inProgress
-                    )
-                }
-            }
-        }
-
-        // Listen for user transcription completed - updates transcript
-        Task {
-            await emitter.when(.userTranscriptionCompleted) { event in
-                if case .userTranscriptionCompleted(let transcript, let itemId) = event {
-                    print("[Conversation] 📝 Updating user transcript - itemId: \(itemId), text: '\(transcript)'")
-                    await queue.updateTranscript(id: itemId, transcript: transcript)
-                }
-            }
-        }
-
-        // Listen for assistant response created - creates message slot
-        Task {
-            await emitter.when(.assistantResponseCreated) { event in
-                if case .assistantResponseCreated(let itemId) = event {
-                    print("[Conversation] 🤖 Creating assistant message slot - itemId: \(itemId)")
-                    await queue.enqueue(
-                        id: itemId,
-                        role: .assistant,
-                        text: nil,
-                        audioData: nil,
-                        transcriptStatus: .inProgress
-                    )
-                }
-            }
-        }
-
-        // Listen for assistant response done - updates transcript
-        Task {
-            await emitter.when(.assistantResponseDone) { event in
-                if case .assistantResponseDone(let itemId, let text) = event {
-                    print("[Conversation] ✅ Finalizing assistant message - itemId: \(itemId), text: '\(text)'")
-                    await queue.updateTranscript(id: itemId, transcript: text)
-                }
-            }
-        }
-    }
-
-    /// Sets up event listeners for text mode MessageQueue population
-    private func setupTextModeEventListeners() {
-        // In text mode, messages are added directly to the queue by ResponsesClient
-        // No need for event listeners - they would cause duplicates
-        // The ResponsesClient should directly add messages to MessageQueue
-    }
-
     // MARK: - Send With Response (Convenience Method)
     
     /// Sends a text message and waits for the complete response
-    /// This is a convenience method for text mode that ensures the response is returned
     /// - Parameter text: The message text
     /// - Returns: The assistant's response message
     /// - Throws: EchoError if sending fails or not in text mode
@@ -874,7 +849,6 @@ public class Conversation {
             throw EchoError.invalidMode("sendWithResponse only available in text mode")
         }
         
-        // For now, just call sendMessage which works properly
         return try await sendMessage(text)
     }
     
