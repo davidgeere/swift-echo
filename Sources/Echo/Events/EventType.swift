@@ -78,6 +78,12 @@ public enum EventType: String, Sendable, CaseIterable {
 
     /// Tool result has been submitted back to the model
     case toolResultSubmitted
+    
+    /// Tool execution completed successfully
+    case toolExecutionCompleted
+    
+    /// Tool execution failed with an error
+    case toolExecutionFailed
 
     // MARK: - Message Events
 

@@ -238,16 +238,22 @@ struct ReasoningEffortTests {
         
         let errorTracker = ErrorTracker()
         
-        echo.when(.error) { event in
-            if case let .error(error) = event {
-                if case let EchoError.invalidResponse(msg) = error {
-                    await errorTracker.recordError(msg)
+        // Use events stream instead of when() handler
+        let eventTask = Task {
+            for await event in echo.events {
+                if case let .error(error) = event {
+                    if case let EchoError.invalidResponse(msg) = error {
+                        await errorTracker.recordError(msg)
+                    }
                 }
             }
         }
         
         // This prompt with high reasoning and low token limit might cause issues
         let response = try await conversation.send("Explain the theory of relativity in detail")
+        
+        // Cancel the event listener after we get the response
+        eventTask.cancel()
         
         let errorState = await errorTracker.getState()
         
