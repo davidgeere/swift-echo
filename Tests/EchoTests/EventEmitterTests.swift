@@ -1,7 +1,7 @@
 // EventEmitterTests.swift
 // EchoTests
 //
-// Comprehensive tests for EventEmitter and Echo event handling
+// Tests for the simplified EventEmitter (pure sink)
 //
 
 import Testing
@@ -13,11 +13,6 @@ actor TestState {
     var receivedEvent: EchoEvent?
     var receivedTranscript: String?
     var receivedItemId: String?
-    var event1Received = false
-    var event2Received = false
-    var handler1Called = false
-    var handler2Called = false
-    var handlerCalled = false
     var receivedEvents: [EventType] = []
     var transcripts: [String] = []
     var responses: [String] = []
@@ -27,11 +22,6 @@ actor TestState {
         receivedEvent = nil
         receivedTranscript = nil
         receivedItemId = nil
-        event1Received = false
-        event2Received = false
-        handler1Called = false
-        handler2Called = false
-        handlerCalled = false
         receivedEvents = []
         transcripts = []
         responses = []
@@ -54,26 +44,6 @@ actor TestState {
         receivedOrder.append(eventType)
     }
     
-    func setEvent1Received(_ value: Bool) {
-        event1Received = value
-    }
-    
-    func setEvent2Received(_ value: Bool) {
-        event2Received = value
-    }
-    
-    func setHandler1Called(_ value: Bool) {
-        handler1Called = value
-    }
-    
-    func setHandler2Called(_ value: Bool) {
-        handler2Called = value
-    }
-    
-    func setHandlerCalled(_ value: Bool) {
-        handlerCalled = value
-    }
-    
     func setReceivedEvent(_ event: EchoEvent?) {
         receivedEvent = event
     }
@@ -87,543 +57,175 @@ actor TestState {
     }
 }
 
-@Suite("Event Emitter")
+@Suite("Event Emitter (Pure Sink)")
 struct EventEmitterTests {
 
-    // MARK: - Single Event Handler Tests
+    // MARK: - Basic Emission Tests
 
-    @Test("Single event handler receives event")
-    func testSingleEventHandler() async throws {
+    @Test("Events stream receives emitted events")
+    func testEventsStreamReceivesEvents() async throws {
         let emitter = EventEmitter()
         let state = TestState()
         
-        await emitter.when(.userStartedSpeaking) { event in
-            await state.setReceivedEvent(event)
+        // Start consuming events
+        let task = Task {
+            for await event in emitter.events {
+                await state.setReceivedEvent(event)
+                break // Stop after first event
+            }
         }
+        
+        // Give stream time to start
+        try await Task.sleep(nanoseconds: 10_000_000)
         
         await emitter.emit(.userStartedSpeaking)
         
-        // Wait a moment for handler execution
+        // Wait for processing
         try await Task.sleep(nanoseconds: 10_000_000)
         
         let receivedEvent = await state.receivedEvent
         #expect(receivedEvent != nil)
-        if case .userStartedSpeaking = receivedEvent! {
+        if let event = receivedEvent, case .userStartedSpeaking = event {
             // Correct event type
         } else {
             Issue.record("Expected .userStartedSpeaking event")
         }
+        
+        task.cancel()
     }
 
-    @Test("Single event handler with associated value")
-    func testSingleEventHandlerWithValue() async throws {
+    @Test("Events stream receives events with associated values")
+    func testEventsStreamWithAssociatedValues() async throws {
         let emitter = EventEmitter()
         let state = TestState()
         
-        await emitter.when(.userTranscriptionCompleted) { event in
-            guard case .userTranscriptionCompleted(let transcript, let itemId) = event else {
-                return
+        // Start consuming events
+        let task = Task {
+            for await event in emitter.events {
+                if case .userTranscriptionCompleted(let transcript, let itemId) = event {
+                    await state.setReceivedTranscript(transcript)
+                    await state.setReceivedItemId(itemId)
+                    break
+                }
             }
-            await state.setReceivedTranscript(transcript)
-            await state.setReceivedItemId(itemId)
         }
+        
+        // Give stream time to start
+        try await Task.sleep(nanoseconds: 10_000_000)
         
         await emitter.emit(.userTranscriptionCompleted(transcript: "Hello world", itemId: "item-123"))
         
-        // Wait for handler execution
+        // Wait for processing
         try await Task.sleep(nanoseconds: 10_000_000)
         
         #expect(await state.receivedTranscript == "Hello world")
         #expect(await state.receivedItemId == "item-123")
+        
+        task.cancel()
     }
 
-    @Test("Async event handler receives event")
-    func testAsyncEventHandler() async throws {
+    @Test("Multiple events received in order")
+    func testMultipleEventsInOrder() async throws {
         let emitter = EventEmitter()
         let state = TestState()
         
-        await emitter.when(.assistantStartedSpeaking) { event in
-            // Simulate async work
-            try? await Task.sleep(nanoseconds: 10_000_000)
-            await state.setReceivedEvent(event)
-        }
-        
-        await emitter.emit(.assistantStartedSpeaking)
-        
-        // Wait for async handler execution
-        try await Task.sleep(nanoseconds: 20_000_000)
-        
-        #expect(await state.receivedEvent != nil)
-    }
-
-    // MARK: - Multiple Events Array Syntax Tests
-
-    @Test("Multiple events handler with array syntax receives all events")
-    func testMultipleEventsArraySyntax() async throws {
-        let emitter = EventEmitter()
-        let state = TestState()
-        
-        await emitter.when([.userStartedSpeaking, .assistantStartedSpeaking]) { event in
-            switch event {
-            case .userStartedSpeaking:
-                await state.setEvent1Received(true)
-            case .assistantStartedSpeaking:
-                await state.setEvent2Received(true)
-            default:
-                break
+        // Start consuming events
+        let task = Task {
+            var count = 0
+            for await event in emitter.events {
+                await state.appendToOrder(event.type)
+                count += 1
+                if count >= 3 { break }
             }
         }
         
-        await emitter.emit(.userStartedSpeaking)
-        await emitter.emit(.assistantStartedSpeaking)
-        
-        // Wait for handler execution
+        // Give stream time to start
         try await Task.sleep(nanoseconds: 10_000_000)
-        
-        #expect(await state.event1Received)
-        #expect(await state.event2Received)
-    }
-
-    @Test("Multiple events handler with array syntax handles three events")
-    func testMultipleEventsArraySyntaxThreeEvents() async throws {
-        let emitter = EventEmitter()
-        let state = TestState()
-        
-        await emitter.when([.userStartedSpeaking, .userStoppedSpeaking, .assistantStartedSpeaking]) { event in
-            await state.appendEvent(event.type)
-        }
         
         await emitter.emit(.userStartedSpeaking)
         await emitter.emit(.userStoppedSpeaking)
         await emitter.emit(.assistantStartedSpeaking)
         
-        // Wait for handler execution
-        try await Task.sleep(nanoseconds: 10_000_000)
-        
-        let events = await state.receivedEvents
-        #expect(events.count == 3)
-        #expect(events.contains(.userStartedSpeaking))
-        #expect(events.contains(.userStoppedSpeaking))
-        #expect(events.contains(.assistantStartedSpeaking))
-    }
-
-    @Test("Multiple events handler with array syntax extracts values correctly")
-    func testMultipleEventsArraySyntaxWithValues() async throws {
-        let emitter = EventEmitter()
-        let state = TestState()
-        
-        await emitter.when([.userTranscriptionCompleted, .assistantResponseDone]) { event in
-            switch event {
-            case .userTranscriptionCompleted(let transcript, _):
-                await state.appendTranscript(transcript)
-            case .assistantResponseDone(_, let text):
-                await state.appendResponse(text)
-            default:
-                break
-            }
-        }
-        
-        await emitter.emit(.userTranscriptionCompleted(transcript: "Hello", itemId: "item-1"))
-        await emitter.emit(.assistantResponseDone(itemId: "item-2", text: "Hi there"))
-        
-        // Wait for handler execution
-        try await Task.sleep(nanoseconds: 10_000_000)
-        
-        let transcripts = await state.transcripts
-        let responses = await state.responses
-        #expect(transcripts.count == 1)
-        #expect(transcripts[0] == "Hello")
-        #expect(responses.count == 1)
-        #expect(responses[0] == "Hi there")
-    }
-
-    // MARK: - Multiple Events Variadic Syntax Tests
-
-    @Test("Multiple events handler with variadic syntax receives all events")
-    func testMultipleEventsVariadicSyntax() async throws {
-        let emitter = EventEmitter()
-        let state = TestState()
-        
-        await emitter.when(.userStartedSpeaking, .assistantStartedSpeaking) { event in
-            switch event {
-            case .userStartedSpeaking:
-                await state.setEvent1Received(true)
-            case .assistantStartedSpeaking:
-                await state.setEvent2Received(true)
-            default:
-                break
-            }
-        }
-        
-        await emitter.emit(.userStartedSpeaking)
-        await emitter.emit(.assistantStartedSpeaking)
-        
-        // Wait for handler execution
-        try await Task.sleep(nanoseconds: 10_000_000)
-        
-        #expect(await state.event1Received)
-        #expect(await state.event2Received)
-    }
-
-    @Test("Multiple events handler with variadic syntax handles three events")
-    func testMultipleEventsVariadicSyntaxThreeEvents() async throws {
-        let emitter = EventEmitter()
-        let state = TestState()
-        
-        await emitter.when(.userStartedSpeaking, .userStoppedSpeaking, .assistantStartedSpeaking) { event in
-            await state.appendEvent(event.type)
-        }
-        
-        await emitter.emit(.userStartedSpeaking)
-        await emitter.emit(.userStoppedSpeaking)
-        await emitter.emit(.assistantStartedSpeaking)
-        
-        // Wait for handler execution
-        try await Task.sleep(nanoseconds: 10_000_000)
-        
-        let events = await state.receivedEvents
-        #expect(events.count == 3)
-        #expect(events.contains(.userStartedSpeaking))
-        #expect(events.contains(.userStoppedSpeaking))
-        #expect(events.contains(.assistantStartedSpeaking))
-    }
-
-    @Test("Multiple events handler with variadic syntax extracts values correctly")
-    func testMultipleEventsVariadicSyntaxWithValues() async throws {
-        let emitter = EventEmitter()
-        let state = TestState()
-        
-        await emitter.when(.userTranscriptionCompleted, .assistantResponseDone) { event in
-            switch event {
-            case .userTranscriptionCompleted(let transcript, _):
-                await state.appendTranscript(transcript)
-            case .assistantResponseDone(_, let text):
-                await state.appendResponse(text)
-            default:
-                break
-            }
-        }
-        
-        await emitter.emit(.userTranscriptionCompleted(transcript: "Hello", itemId: "item-1"))
-        await emitter.emit(.assistantResponseDone(itemId: "item-2", text: "Hi there"))
-        
-        // Wait for handler execution
-        try await Task.sleep(nanoseconds: 10_000_000)
-        
-        let transcripts = await state.transcripts
-        let responses = await state.responses
-        #expect(transcripts.count == 1)
-        #expect(transcripts[0] == "Hello")
-        #expect(responses.count == 1)
-        #expect(responses[0] == "Hi there")
-    }
-
-    // MARK: - Echo.when() Tests
-
-    @Test("Echo.when() single event works")
-    func testEchoWhenSingleEvent() async throws {
-        let echo = Echo(key: "test-key")
-        let state = TestState()
-        
-        echo.when(.userStartedSpeaking) { event in
-            Task {
-                await state.setReceivedEvent(event)
-            }
-        }
-        
-        // Wait a moment for handler registration
-        try await Task.sleep(nanoseconds: 10_000_000)
-        
-        await echo.eventEmitter.emit(.userStartedSpeaking)
-        
-        // Wait a moment for handler execution
-        try await Task.sleep(nanoseconds: 10_000_000)
-        
-        #expect(await state.receivedEvent != nil)
-    }
-
-    @Test("Echo.when() multiple events array syntax works")
-    func testEchoWhenMultipleEventsArray() async throws {
-        let echo = Echo(key: "test-key")
-        let state = TestState()
-        
-        echo.when([.userStartedSpeaking, .assistantStartedSpeaking]) { event in
-            Task {
-                switch event {
-                case .userStartedSpeaking:
-                    await state.setEvent1Received(true)
-                case .assistantStartedSpeaking:
-                    await state.setEvent2Received(true)
-                default:
-                    break
-                }
-            }
-        }
-        
-        // Wait for handler registration
-        try await Task.sleep(nanoseconds: 10_000_000)
-        
-        await echo.eventEmitter.emit(.userStartedSpeaking)
-        await echo.eventEmitter.emit(.assistantStartedSpeaking)
-        
-        // Wait for handler execution
-        try await Task.sleep(nanoseconds: 10_000_000)
-        
-        #expect(await state.event1Received)
-        #expect(await state.event2Received)
-    }
-
-    @Test("Echo.when() multiple events variadic syntax works")
-    func testEchoWhenMultipleEventsVariadic() async throws {
-        let echo = Echo(key: "test-key")
-        let state = TestState()
-        
-        echo.when(.userStartedSpeaking, .assistantStartedSpeaking) { event in
-            Task {
-                switch event {
-                case .userStartedSpeaking:
-                    await state.setEvent1Received(true)
-                case .assistantStartedSpeaking:
-                    await state.setEvent2Received(true)
-                default:
-                    break
-                }
-            }
-        }
-        
-        // Wait for handler registration
-        try await Task.sleep(nanoseconds: 10_000_000)
-        
-        await echo.eventEmitter.emit(.userStartedSpeaking)
-        await echo.eventEmitter.emit(.assistantStartedSpeaking)
-        
-        // Wait for handler execution
-        try await Task.sleep(nanoseconds: 10_000_000)
-        
-        #expect(await state.event1Received)
-        #expect(await state.event2Received)
-    }
-
-    // MARK: - Multiple Handlers Tests
-
-    @Test("Multiple handlers for same event all receive event")
-    func testMultipleHandlersSameEvent() async throws {
-        let emitter = EventEmitter()
-        let state = TestState()
-        
-        await emitter.when(.userStartedSpeaking) { _ in
-            await state.setHandler1Called(true)
-        }
-        
-        await emitter.when(.userStartedSpeaking) { _ in
-            await state.setHandler2Called(true)
-        }
-        
-        await emitter.emit(.userStartedSpeaking)
-        
-        // Wait for handler execution
-        try await Task.sleep(nanoseconds: 10_000_000)
-        
-        #expect(await state.handler1Called)
-        #expect(await state.handler2Called)
-    }
-
-    @Test("Handler only receives events it's registered for")
-    func testHandlerOnlyReceivesRegisteredEvents() async throws {
-        let emitter = EventEmitter()
-        let state = TestState()
-        
-        await emitter.when(.userStartedSpeaking) { _ in
-            await state.setHandlerCalled(true)
-        }
-        
-        // Emit different event
-        await emitter.emit(.assistantStartedSpeaking)
-        
-        // Wait a moment
-        try await Task.sleep(nanoseconds: 10_000_000)
-        
-        let handlerCalledBefore = await state.handlerCalled
-        #expect(!handlerCalledBefore)
-        
-        // Emit correct event
-        await emitter.emit(.userStartedSpeaking)
-        
-        // Wait for handler execution
-        try await Task.sleep(nanoseconds: 10_000_000)
-        
-        let handlerCalledAfter = await state.handlerCalled
-        #expect(handlerCalledAfter)
-    }
-
-    // MARK: - Handler Removal Tests
-
-    @Test("Handler can be removed by ID")
-    func testRemoveHandlerById() async throws {
-        let emitter = EventEmitter()
-        let state = TestState()
-        
-        let handlerId = await emitter.when(.userStartedSpeaking) { _ in
-            await state.setHandlerCalled(true)
-        }
-        
-        await emitter.emit(.userStartedSpeaking)
-        
-        // Wait for handler execution
-        try await Task.sleep(nanoseconds: 10_000_000)
-        
-        let handlerCalledBefore = await state.handlerCalled
-        #expect(handlerCalledBefore)
-        
-        await state.reset()
-        await emitter.removeHandler(handlerId)
-        
-        await emitter.emit(.userStartedSpeaking)
-        
-        // Wait a moment
-        try await Task.sleep(nanoseconds: 10_000_000)
-        
-        let handlerCalledAfter = await state.handlerCalled
-        #expect(!handlerCalledAfter)
-    }
-
-    @Test("Removing handler doesn't affect other handlers")
-    func testRemoveHandlerDoesntAffectOthers() async throws {
-        let emitter = EventEmitter()
-        let state = TestState()
-        
-        let handler1Id = await emitter.when(.userStartedSpeaking) { _ in
-            await state.setHandler1Called(true)
-        }
-        
-        await emitter.when(.userStartedSpeaking) { _ in
-            await state.setHandler2Called(true)
-        }
-        
-        await emitter.removeHandler(handler1Id)
-        
-        await emitter.emit(.userStartedSpeaking)
-        
-        // Wait for handler execution
-        try await Task.sleep(nanoseconds: 10_000_000)
-        
-        let handler1Called = await state.handler1Called
-        let handler2Called = await state.handler2Called
-        #expect(!handler1Called)
-        #expect(handler2Called)
-    }
-
-    // MARK: - Edge Cases
-
-    @Test("Empty array of events doesn't crash")
-    func testEmptyEventArray() async throws {
-        let emitter = EventEmitter()
-        
-        // Should not crash
-        let handlerIds = await emitter.when([], handler: { _ in })
-        
-        #expect(handlerIds.isEmpty)
-    }
-
-    @Test("Handler receives events in order")
-    func testHandlerReceivesEventsInOrder() async throws {
-        let emitter = EventEmitter()
-        let state = TestState()
-        
-        await emitter.when(.userStartedSpeaking, .userStoppedSpeaking) { event in
-            await state.appendToOrder(event.type)
-        }
-        
-        await emitter.emit(.userStartedSpeaking)
-        await emitter.emit(.userStoppedSpeaking)
-        await emitter.emit(.userStartedSpeaking)
-        
-        // Wait for handler execution
-        try await Task.sleep(nanoseconds: 10_000_000)
+        // Wait for processing
+        try await Task.sleep(nanoseconds: 50_000_000)
         
         let order = await state.receivedOrder
         #expect(order.count == 3)
         #expect(order[0] == .userStartedSpeaking)
         #expect(order[1] == .userStoppedSpeaking)
-        #expect(order[2] == .userStartedSpeaking)
+        #expect(order[2] == .assistantStartedSpeaking)
+        
+        task.cancel()
     }
 
-    // MARK: - All Events Handler Tests
+    // MARK: - Multiple Consumers Tests
+    
+    // Note: AsyncStream is single-consumer by design. Each consumer gets a subset of events.
+    // For multiple consumers, the pattern is to have each consumer create their own observation task
+    // from the same `events` stream, but events are distributed (not duplicated) between consumers.
 
-    @Test("Echo.when() handler for all events receives events")
-    func testEchoWhenAllEventsHandler() async throws {
-        let echo = Echo(key: "test-key")
+    @Test("Events are consumed from stream")
+    func testEventsConsumed() async throws {
+        let emitter = EventEmitter()
         let state = TestState()
         
-        // Register handler for all events (async version - returns handler IDs)
-        let handlerIds = await echo.when { event in
-            await state.appendEvent(event.type)
+        // Single consumer gets all events
+        let task = Task {
+            for await event in emitter.events {
+                await state.appendEvent(event.type)
+                if await state.receivedEvents.count >= 2 { break }
+            }
         }
         
-        // Should have handler IDs for all event types
-        #expect(!handlerIds.isEmpty)
+        // Give stream time to start
+        try await Task.sleep(nanoseconds: 10_000_000)
         
-        // Emit various events
-        await echo.eventEmitter.emit(.userStartedSpeaking)
-        await echo.eventEmitter.emit(.assistantStartedSpeaking)
-        await echo.eventEmitter.emit(.audioLevelChanged(level: 0.5))
+        await emitter.emit(.userStartedSpeaking)
+        await emitter.emit(.assistantStartedSpeaking)
         
-        // Wait for handler execution
+        // Wait for processing
         try await Task.sleep(nanoseconds: 50_000_000)
         
-        let receivedEvents = await state.receivedEvents
-        #expect(receivedEvents.contains(.userStartedSpeaking))
-        #expect(receivedEvents.contains(.assistantStartedSpeaking))
-        #expect(receivedEvents.contains(.audioLevelChanged))
+        let events = await state.receivedEvents
+        
+        #expect(events.contains(.userStartedSpeaking))
+        #expect(events.contains(.assistantStartedSpeaking))
+        #expect(events.count == 2)
+        
+        task.cancel()
     }
 
-    @Test("Echo.when() async handler for all events receives events")
-    func testEchoWhenAllEventsAsyncHandler() async throws {
-        let echo = Echo(key: "test-key")
+    // MARK: - Fire and Forget Tests
+
+    @Test("emitAsync is fire and forget")
+    func testEmitAsyncFireAndForget() async throws {
+        let emitter = EventEmitter()
         let state = TestState()
         
-        // Register async handler for all events
-        let handlerIds = await echo.when { event in
-            await state.appendEvent(event.type)
+        // Start consuming events
+        let task = Task {
+            for await event in emitter.events {
+                await state.setReceivedEvent(event)
+                break
+            }
         }
         
-        // Should have handler IDs for all event types
-        #expect(!handlerIds.isEmpty)
-        
-        // Emit various events
-        await echo.eventEmitter.emit(.userStoppedSpeaking)
-        await echo.eventEmitter.emit(.assistantStoppedSpeaking)
-        
-        // Wait for handler execution
+        // Give stream time to start
         try await Task.sleep(nanoseconds: 10_000_000)
         
-        let receivedEvents = await state.receivedEvents
-        #expect(receivedEvents.contains(.userStoppedSpeaking))
-        #expect(receivedEvents.contains(.assistantStoppedSpeaking))
+        // Use nonisolated emitAsync
+        emitter.emitAsync(.userStartedSpeaking)
+        
+        // Wait for processing
+        try await Task.sleep(nanoseconds: 50_000_000)
+        
+        let receivedEvent = await state.receivedEvent
+        #expect(receivedEvent != nil)
+        
+        task.cancel()
     }
 
-    @Test("Echo.when() async handler for all events with async closure")
-    func testEchoWhenAllEventsAsyncClosure() async throws {
-        let echo = Echo(key: "test-key")
-        let state = TestState()
-        
-        // Register async handler with async closure
-        let handlerIds = await echo.when { event in
-            await state.appendEvent(event.type)
-            // Simulate async work
-            try? await Task.sleep(nanoseconds: 1_000_000)
-        }
-        
-        #expect(!handlerIds.isEmpty)
-        
-        await echo.eventEmitter.emit(.turnChanged(speaker: .user))
-        
-        // Wait for handler execution
-        try await Task.sleep(nanoseconds: 10_000_000)
-        
-        let receivedEvents = await state.receivedEvents
-        #expect(receivedEvents.contains(.turnChanged))
-    }
+    // MARK: - Echo Integration Tests
 
     @Test("Echo.events stream receives all events")
     func testEchoEventsStream() async throws {
@@ -631,7 +233,7 @@ struct EventEmitterTests {
         let state = TestState()
         
         // Consume events from stream
-        Task {
+        let task = Task {
             for await event in echo.events {
                 await state.appendEvent(event.type)
                 
@@ -659,6 +261,8 @@ struct EventEmitterTests {
         #expect(receivedEvents.contains(.userStartedSpeaking))
         #expect(receivedEvents.contains(.assistantStartedSpeaking))
         #expect(receivedEvents.contains(.audioLevelChanged))
+        
+        task.cancel()
     }
 
     @Test("Echo.events stream can break out of loop")
@@ -667,7 +271,7 @@ struct EventEmitterTests {
         let state = TestState()
         
         // Consume events from stream with break condition
-        Task {
+        let task = Task {
             for await event in echo.events {
                 await state.appendEvent(event.type)
                 
@@ -696,5 +300,91 @@ struct EventEmitterTests {
         #expect(receivedEvents.contains(.assistantStoppedSpeaking))
         // Should not contain userStoppedSpeaking because we broke before it
         #expect(!receivedEvents.contains(.userStoppedSpeaking))
+        
+        task.cancel()
+    }
+
+    @Test("Events can be filtered using switch")
+    func testEventsFiltering() async throws {
+        let echo = Echo(key: "test-key")
+        let state = TestState()
+        
+        // Consume only specific events
+        let task = Task {
+            for await event in echo.events {
+                switch event {
+                case .userTranscriptionCompleted(let transcript, _):
+                    await state.appendTranscript(transcript)
+                case .assistantResponseDone(_, let text):
+                    await state.appendResponse(text)
+                default:
+                    break // Ignore other events
+                }
+                
+                let transcriptCount = await state.transcripts.count
+                let responseCount = await state.responses.count
+                if transcriptCount >= 1 && responseCount >= 1 {
+                    break
+                }
+            }
+        }
+        
+        // Wait for stream to be ready
+        try await Task.sleep(nanoseconds: 10_000_000)
+        
+        // Emit various events (some should be ignored)
+        await echo.eventEmitter.emit(.userStartedSpeaking)
+        await echo.eventEmitter.emit(.userTranscriptionCompleted(transcript: "Hello", itemId: "item-1"))
+        await echo.eventEmitter.emit(.assistantStartedSpeaking)
+        await echo.eventEmitter.emit(.assistantResponseDone(itemId: "item-2", text: "Hi there"))
+        
+        // Wait for stream processing
+        try await Task.sleep(nanoseconds: 50_000_000)
+        
+        let transcripts = await state.transcripts
+        let responses = await state.responses
+        #expect(transcripts.count == 1)
+        #expect(transcripts[0] == "Hello")
+        #expect(responses.count == 1)
+        #expect(responses[0] == "Hi there")
+        
+        task.cancel()
+    }
+
+    @Test("Events stream with async where clause")
+    func testEventsStreamWithWhereClause() async throws {
+        let echo = Echo(key: "test-key")
+        let state = TestState()
+        
+        // Filter events using where clause
+        let task = Task {
+            for await event in echo.events where event.type == .userStartedSpeaking || event.type == .userStoppedSpeaking {
+                await state.appendEvent(event.type)
+                
+                let count = await state.receivedEvents.count
+                if count >= 2 { break }
+            }
+        }
+        
+        // Wait for stream to be ready
+        try await Task.sleep(nanoseconds: 10_000_000)
+        
+        // Emit various events (only user speech events should be captured)
+        await echo.eventEmitter.emit(.assistantStartedSpeaking) // Should be ignored
+        await echo.eventEmitter.emit(.userStartedSpeaking) // Should be captured
+        await echo.eventEmitter.emit(.audioLevelChanged(level: 0.5)) // Should be ignored
+        await echo.eventEmitter.emit(.userStoppedSpeaking) // Should be captured
+        
+        // Wait for stream processing
+        try await Task.sleep(nanoseconds: 50_000_000)
+        
+        let receivedEvents = await state.receivedEvents
+        #expect(receivedEvents.count == 2)
+        #expect(receivedEvents.contains(.userStartedSpeaking))
+        #expect(receivedEvents.contains(.userStoppedSpeaking))
+        #expect(!receivedEvents.contains(.assistantStartedSpeaking))
+        #expect(!receivedEvents.contains(.audioLevelChanged))
+        
+        task.cancel()
     }
 }

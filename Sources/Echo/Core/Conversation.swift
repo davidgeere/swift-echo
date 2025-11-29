@@ -8,7 +8,7 @@ import Observation
 /// Manages a single conversation with seamless mode switching between audio and text
 @MainActor
 @Observable
-public class Conversation {
+public class Conversation: RealtimeClientDelegate, TurnManagerDelegate {
     // MARK: - Properties
 
     /// Unique conversation ID
@@ -46,6 +46,9 @@ public class Conversation {
 
     /// Registered MCP servers
     private let mcpServers: [MCPServer]
+    
+    /// Tool executor for handling tool calls
+    private let toolExecutor: ToolExecutor?
 
     /// Optional audio capture factory for testing
     private let audioCaptureFactory: (@Sendable () async -> any AudioCaptureProtocol)?
@@ -84,6 +87,7 @@ public class Conversation {
     ///   - eventEmitter: Event emitter for publishing events
     ///   - tools: Registered tools for function calling
     ///   - mcpServers: Registered MCP servers
+    ///   - toolExecutor: Optional tool executor for handling tool calls
     ///   - audioCaptureFactory: Optional factory for creating audio capture (for testing)
     ///   - audioPlaybackFactory: Optional factory for creating audio playback (for testing)
     init(
@@ -94,6 +98,7 @@ public class Conversation {
         eventEmitter: EventEmitter,
         tools: [Tool] = [],
         mcpServers: [MCPServer] = [],
+        toolExecutor: ToolExecutor? = nil,
         audioCaptureFactory: (@Sendable () async -> any AudioCaptureProtocol)? = nil,
         audioPlaybackFactory: (@Sendable () async -> any AudioPlaybackProtocol)? = nil
     ) async throws {
@@ -105,6 +110,7 @@ public class Conversation {
         self.eventEmitter = eventEmitter
         self.mcpServers = mcpServers
         self.tools = tools
+        self.toolExecutor = toolExecutor
         self.messageQueue = MessageQueue(eventEmitter: eventEmitter)
         self.audioCaptureFactory = audioCaptureFactory
         self.audioPlaybackFactory = audioPlaybackFactory
@@ -122,56 +128,55 @@ public class Conversation {
 
     private func initializeAudioMode() async throws {
         // Create turn manager with proper mode handling
-        // CRITICAL FIX: Support manual mode instead of coercing to .disabled
         let turnMode: TurnManager.TurnMode
         switch configuration.turnDetection {
         case .automatic(let vad):
             turnMode = .automatic(vad)
         case .manual:
-            // Manual mode with 30-second timeout fallback
             turnMode = .manual(timeout: .seconds(30))
         case .disabled, .none:
             turnMode = .disabled
         }
-        turnManager = TurnManager(mode: turnMode, eventEmitter: eventEmitter)
+        
+        // Create turn manager with self as delegate
+        let tm = TurnManager(mode: turnMode, eventEmitter: eventEmitter)
+        await tm.setDelegate(self)
+        turnManager = tm
 
         // Create Realtime client configuration with systemMessage
-        // CRITICAL FIX: Pass systemMessage as instructions instead of nil
         let realtimeConfig = RealtimeClientConfiguration(
             model: configuration.realtimeModel,
             voice: configuration.voice,
             audioFormat: configuration.audioFormat,
             turnDetection: configuration.turnDetection,
-            instructions: systemMessage,  // ✅ FIXED: Use actual systemMessage
+            instructions: systemMessage,
             enableTranscription: configuration.enableTranscription,
             startAudioAutomatically: true,
             temperature: configuration.temperature,
             maxOutputTokens: configuration.maxTokens
         )
 
-        // CRITICAL FIX: Pass TurnManager to RealtimeClient for event routing
-        // Also pass audio factories for dependency injection (testing)
+        // Create RealtimeClient with direct references (no event listener Tasks)
         let client = RealtimeClient(
             apiKey: apiKey,
             configuration: realtimeConfig,
             eventEmitter: eventEmitter,
             tools: tools,
             mcpServers: mcpServers,
-            turnManager: turnManager,  // ✅ Wire TurnManager into event flow
-            audioCaptureFactory: audioCaptureFactory,  // ✅ Enable mock audio for testing
-            audioPlaybackFactory: audioPlaybackFactory  // ✅ Enable mock audio for testing
+            turnManager: turnManager,
+            toolExecutor: toolExecutor,
+            delegate: self,  // Direct delegate instead of event listeners
+            audioCaptureFactory: audioCaptureFactory,
+            audioPlaybackFactory: audioPlaybackFactory
         )
 
-        // Set up event listeners for MessageQueue population
-        setupAudioModeEventListeners()
+        // NO event listener setup - using delegate pattern instead
 
-        // Connect and start session - this may throw
+        // Connect and start session
         do {
             try await client.connect()
-            // Only assign if connection succeeds
             realtimeClient = client
         } catch {
-            // Connection failed - clean up and propagate error
             await client.disconnect()
             throw error
         }
@@ -184,9 +189,69 @@ public class Conversation {
             eventEmitter: eventEmitter
         )
         responsesClient = client
+        // NO event listener setup needed for text mode
+    }
 
-        // Set up event listeners for text mode
-        setupTextModeEventListeners()
+    // MARK: - RealtimeClientDelegate Implementation
+
+    nonisolated public func realtimeClient(_ client: RealtimeClient, didReceiveToolCall call: ToolCall) async {
+        // Tool calls are handled by ToolExecutor directly in RealtimeClient
+        // This is only called if no executor is set
+    }
+
+    nonisolated public func realtimeClientDidDetectUserSpeech(_ client: RealtimeClient) async {
+        // Speech events are handled by TurnManager directly
+    }
+
+    nonisolated public func realtimeClientDidDetectUserSilence(_ client: RealtimeClient) async {
+        // Silence events are handled by TurnManager directly
+    }
+
+    nonisolated public func realtimeClient(_ client: RealtimeClient, didReceiveTranscript transcript: String, itemId: String) async {
+        // Update message queue directly (no event listener Task)
+        await messageQueue.updateTranscript(id: itemId, transcript: transcript)
+    }
+
+    nonisolated public func realtimeClient(_ client: RealtimeClient, didStartAssistantResponse itemId: String) async {
+        // Create message slot directly (no event listener Task)
+        await messageQueue.enqueue(
+            id: itemId,
+            role: .assistant,
+            text: nil,
+            audioData: nil,
+            transcriptStatus: .inProgress
+        )
+    }
+
+    nonisolated public func realtimeClient(_ client: RealtimeClient, didReceiveAssistantResponse text: String, itemId: String) async {
+        // Update message queue directly (no event listener Task)
+        await messageQueue.updateTranscript(id: itemId, transcript: text)
+    }
+
+    nonisolated public func realtimeClientDidFinishAssistantResponse(_ client: RealtimeClient) async {
+        // Response completion is handled in didReceiveAssistantResponse
+    }
+
+    nonisolated public func realtimeClient(_ client: RealtimeClient, didCommitAudioBuffer itemId: String) async {
+        // Create user message slot directly (no event listener Task)
+        await messageQueue.enqueue(
+            id: itemId,
+            role: .user,
+            text: nil,
+            audioData: nil,
+            transcriptStatus: .inProgress
+        )
+    }
+
+    // MARK: - TurnManagerDelegate Implementation
+
+    nonisolated public func turnManagerDidRequestInterruption(_ manager: TurnManager) async {
+        // Interrupt playback directly (no event-based coordination)
+        await realtimeClient?.interruptPlayback()
+    }
+
+    nonisolated public func turnManagerDidEndUserTurn(_ manager: TurnManager) async {
+        // Handle turn end if needed
     }
 
     // MARK: - Sending Messages
@@ -198,12 +263,10 @@ public class Conversation {
     public func send(_ text: String) async throws -> Message? {
         switch mode {
         case .audio:
-            // In audio mode, send as text input (will be synthesized to speech)
             guard let client = realtimeClient else {
                 throw EchoError.clientNotInitialized("Realtime client not initialized")
             }
 
-            // Create conversation item with text
             let itemDict: [String: Any] = [
                 "type": "message",
                 "role": "user",
@@ -218,13 +281,10 @@ public class Conversation {
             let sendableItem = try SendableJSON.from(dictionary: itemDict)
             try await client.send(.conversationItemCreate(item: sendableItem, previousItemId: nil))
             
-            // Only manually trigger response if NOT using automatic turn detection
-            // In automatic mode, VAD will trigger the response when it detects silence
             if case .manual = configuration.turnDetection {
                 try await client.send(.responseCreate(response: nil))
             }
             
-            // Add message to queue to maintain unified history
             _ = await messageQueue.enqueue(
                 role: .user,
                 text: text,
@@ -232,16 +292,13 @@ public class Conversation {
                 transcriptStatus: .completed
             )
             
-            // Audio mode is streaming, response will come through events
             return nil
 
         case .text:
-            // In text mode, send to Responses API and await response
             guard let client = responsesClient else {
                 throw EchoError.clientNotInitialized("Responses client not initialized")
             }
 
-            // Add message to queue
             _ = await messageQueue.enqueue(
                 role: .user,
                 text: text,
@@ -249,18 +306,13 @@ public class Conversation {
                 transcriptStatus: .notApplicable
             )
 
-            // Get conversation history
             let history = await messageQueue.getOrderedMessages()
-
-            // Send to Responses API with streaming
             let responsesModel = configuration.responsesModel
 
-            // Convert tools and MCP servers to ResponsesTool format
             var allResponsesTools: [ResponsesTool] = []
             allResponsesTools.append(contentsOf: tools.map { $0.toResponsesTool() })
             allResponsesTools.append(contentsOf: mcpServers.map { $0.toResponsesTool() })
 
-            // CRITICAL FIX: Wait for stream completion using continuation
             let assistantMessage = await withCheckedContinuation { (continuation: CheckedContinuation<Message?, Never>) in
                 Task {
                     await client.withStreamResponse(
@@ -279,11 +331,9 @@ public class Conversation {
                             for try await event in stream {
                                 switch event {
                                 case .responseDelta(let delta):
-                                    // Accumulate text
                                     assistantText += delta
                                     
                                 case .responseDone(let response):
-                                    // Extract final text if available
                                     if let firstText = response.firstText, !firstText.isEmpty {
                                         assistantText = firstText
                                     }
@@ -292,14 +342,11 @@ public class Conversation {
                                     await eventEmitter.emit(.error(error: EchoError.invalidResponse(error)))
                                     
                                 case .raw(let type, let data):
-                                    // Handle raw events that might contain text
                                     if type == "response.output_text.done" {
-                                        // Extract text from the raw event
                                         if let text = data["text"]?.value as? String {
                                             assistantText = text
                                         }
                                     } else if type == "response.output_item.done" {
-                                        // Alternative format for text completion
                                         if let item = data["item"]?.value as? [String: Any],
                                            let contentArray = item["content"] as? [[String: Any]] {
                                             for content in contentArray {
@@ -311,20 +358,16 @@ public class Conversation {
                                             }
                                         }
                                     } else if type == "response.incomplete" {
-                                        // Handle incomplete responses (e.g., reasoning-only responses)
-                                        // This can happen with certain prompts that trigger extended reasoning
                                         await eventEmitter.emit(.error(error: EchoError.invalidResponse(
-                                            "Response was incomplete - the model returned only reasoning without a text response. Try rephrasing your question or adjusting reasoning effort."
+                                            "Response was incomplete - the model returned only reasoning without a text response."
                                         )))
                                     }
                                     
                                 default:
-                                    // Handle other events
                                     break
                                 }
                             }
                             
-                            // After stream completes, enqueue the message
                             if !assistantText.isEmpty {
                                 finalMessageId = await messageQueue.enqueue(
                                     role: .assistant,
@@ -337,7 +380,6 @@ public class Conversation {
                             await eventEmitter.emit(.error(error: error))
                         }
                         
-                        // Resume with the final message
                         if let messageId = finalMessageId {
                             let message = await messageQueue.getMessage(byId: messageId)
                             continuation.resume(returning: message)
@@ -353,31 +395,23 @@ public class Conversation {
     }
 
     /// Sends a message with optional response format (for structured outputs)
-    /// - Parameters:
-    ///   - text: The message text
-    ///   - responseFormat: Optional response format for structured outputs (text mode only)
-    /// - Returns: The assistant's response message (for non-streaming use cases)
-    /// - Throws: EchoError if sending fails
     public func sendMessage(
         _ text: String,
         responseFormat: ResponseFormat? = nil
     ) async throws -> Message? {
         switch mode {
         case .audio:
-            // In audio mode, responseFormat is not applicable
             if responseFormat != nil {
                 print("[Conversation] Warning: responseFormat is ignored in audio mode")
             }
             _ = try await send(text)
-            return nil  // Audio mode is always streaming
+            return nil
             
         case .text:
-            // In text mode, send to Responses API with optional format
             guard let client = responsesClient else {
                 throw EchoError.clientNotInitialized("Responses client not initialized")
             }
             
-            // Add user message to queue
             _ = await messageQueue.enqueue(
                 role: .user,
                 text: text,
@@ -385,17 +419,13 @@ public class Conversation {
                 transcriptStatus: .notApplicable
             )
             
-            // Get conversation history
             let history = await messageQueue.getOrderedMessages()
             
-            // Convert tools and MCP servers to ResponsesTool format
             var allResponsesTools: [ResponsesTool] = []
             allResponsesTools.append(contentsOf: tools.map { $0.toResponsesTool() })
             allResponsesTools.append(contentsOf: mcpServers.map { $0.toResponsesTool() })
             
-            // If responseFormat is provided and JSON mode requested, use non-streaming
             if let format = responseFormat {
-                // Non-streaming for structured outputs
                 let response = try await client.createResponseWithFormat(
                     model: configuration.responsesModel,
                     input: history,
@@ -406,16 +436,11 @@ public class Conversation {
                     responseFormat: format
                 )
                 
-                // Try to extract text from the response
-                // In JSON mode, we might not get a message with text but we still get content
                 var responseText: String? = response.firstText
                 
-                // If no text found via firstText, try to extract from output items
                 if responseText == nil && !response.output.isEmpty {
-                    // Look through output items for message content
                     for outputItem in response.output {
                         if case .message(let message) = outputItem {
-                            // Extract text from message content parts
                             for contentPart in message.content {
                                 if case .text(let text) = contentPart {
                                     responseText = text
@@ -429,7 +454,6 @@ public class Conversation {
                     }
                 }
                 
-                // Extract and enqueue response message
                 if let firstItem = responseText {
                     let messageId = await messageQueue.enqueue(
                         role: .assistant,
@@ -438,14 +462,10 @@ public class Conversation {
                         transcriptStatus: .notApplicable
                     )
                     
-                    // Return the created message
-                    let message = await messageQueue.getMessage(byId: messageId)
-                    return message
+                    return await messageQueue.getMessage(byId: messageId)
                 }
                 return nil
             } else {
-                // Streaming mode (default behavior)
-                // CRITICAL FIX: Wait for stream completion using continuation
                 let assistantMessage = await withCheckedContinuation { (continuation: CheckedContinuation<Message?, Never>) in
                     Task {
                         await client.withStreamResponse(
@@ -464,11 +484,9 @@ public class Conversation {
                                 for try await event in stream {
                                     switch event {
                                     case .responseDelta(let delta):
-                                        // Accumulate text
                                         assistantText += delta
                                         
                                     case .responseDone(let response):
-                                        // Extract final text if available
                                         if let firstText = response.firstText, !firstText.isEmpty {
                                             assistantText = firstText
                                         }
@@ -477,14 +495,11 @@ public class Conversation {
                                         await eventEmitter.emit(.error(error: EchoError.invalidResponse(error)))
                                         
                                     case .raw(let type, let data):
-                                        // Handle raw events that might contain text
                                         if type == "response.output_text.done" {
-                                            // Extract text from the raw event
                                             if let text = data["text"]?.value as? String {
                                                 assistantText = text
                                             }
                                         } else if type == "response.output_item.done" {
-                                            // Alternative format for text completion
                                             if let item = data["item"]?.value as? [String: Any],
                                                let contentArray = item["content"] as? [[String: Any]] {
                                                 for content in contentArray {
@@ -496,20 +511,16 @@ public class Conversation {
                                                 }
                                             }
                                         } else if type == "response.incomplete" {
-                                            // Handle incomplete responses (e.g., reasoning-only responses)
-                                            // This can happen with certain prompts that trigger extended reasoning
                                             await eventEmitter.emit(.error(error: EchoError.invalidResponse(
-                                                "Response was incomplete - the model returned only reasoning without a text response. Try rephrasing your question."
+                                                "Response was incomplete - the model returned only reasoning without a text response."
                                             )))
                                         }
                                         
                                     default:
-                                        // Handle other events
                                         break
                                     }
                                 }
                                 
-                                // After stream completes, enqueue the message
                                 if !assistantText.isEmpty {
                                     finalMessageId = await messageQueue.enqueue(
                                         role: .assistant,
@@ -522,7 +533,6 @@ public class Conversation {
                                 await eventEmitter.emit(.error(error: error))
                             }
                             
-                            // Resume with the final message
                             if let messageId = finalMessageId {
                                 let message = await messageQueue.getMessage(byId: messageId)
                                 continuation.resume(returning: message)
@@ -537,69 +547,10 @@ public class Conversation {
             }
         }
     }
-    
-    // MARK: - Stream Processing
-
-    /// Processes the response stream from Responses API
-    /// This must be nonisolated to avoid MainActor isolation conflicts
-    /// We isolate the stream processing to the client actor to avoid Sendable issues
-    nonisolated private static func processResponseStream(
-        client: ResponsesClient,
-        model: ResponsesModel,
-        history: [Message],
-        instructions: String?,
-        tools: [ResponsesTool],
-        emitter: EventEmitter,
-        messageQueue: MessageQueue,
-        temperature: Double,
-        maxOutputTokens: Int?,
-        responseFormat: ResponseFormat? = nil
-    ) async {
-        // Process the stream isolated to the client actor
-        // This avoids the non-Sendable AsyncThrowingStream crossing actor boundaries
-        await client.withStreamResponse(
-            model: model,
-            input: history,
-            instructions: instructions,
-            tools: tools,
-            temperature: temperature,
-            maxOutputTokens: maxOutputTokens
-        ) { stream in
-            // Process stream events
-            var assistantText = ""
-            do {
-                for try await event in stream {
-                    switch event {
-                    case .responseDelta(let delta):
-                        // Accumulate text
-                        assistantText += delta
-                    case .responseDone(_):
-                        // Add complete message to queue
-                        if !assistantText.isEmpty {
-                            await messageQueue.enqueue(
-                                role: .assistant,
-                                text: assistantText,
-                                audioData: nil,
-                                transcriptStatus: .notApplicable
-                            )
-                        }
-                    default:
-                        // Other events are handled elsewhere
-                        break
-                    }
-                }
-            } catch {
-                // Stream error - emit error event
-                await emitter.emit(.error(error: error))
-            }
-        }
-    }
 
     // MARK: - Mode Switching
 
     /// Switches to a different mode
-    /// - Parameter newMode: The mode to switch to
-    /// - Throws: EchoError if switching fails
     public func switchMode(to newMode: EchoMode) async throws {
         guard mode != newMode else { return }
 
@@ -619,34 +570,24 @@ public class Conversation {
     }
 
     private func transitionAudioToText() async throws {
-        // 2. Disconnect Realtime WebSocket
         await realtimeClient?.disconnect()
         realtimeClient = nil
         turnManager = nil
 
-        // 3. Initialize Responses client
         try await initializeTextMode()
-
-        // Context is already preserved in MessageQueue as text transcripts
     }
 
     private func transitionTextToAudio() async throws {
-        // 1. Get conversation history
         let messages = await messageQueue.getOrderedMessages()
 
-        // 2. Initialize Realtime WebSocket FIRST (before destroying responses client)
         try await initializeAudioMode()
 
-        // 3. Clean up Responses client only AFTER successful audio initialization
         responsesClient = nil
 
-        // 4. Inject history into Realtime API
         guard let client = realtimeClient else {
             throw EchoError.clientNotInitialized("Realtime client not initialized after initialization")
         }
         
-        // Send each message as a conversation item
-        // CRITICAL: Realtime API expects "input_text" for user messages and "text" for assistant messages
         for message in messages {
             let contentType = message.role == .user ? "input_text" : "text"
             let itemDict: [String: Any] = [
@@ -663,15 +604,11 @@ public class Conversation {
             let sendableItem = try SendableJSON.from(dictionary: itemDict)
             try await client.send(.conversationItemCreate(item: sendableItem, previousItemId: nil))
         }
-
-        // Ready for audio interaction with full context
     }
 
     // MARK: - Audio Control
 
     /// Mutes/unmutes audio input
-    /// - Parameter muted: Whether to mute audio
-    /// - Throws: EchoError if not in audio mode
     public func setMuted(_ muted: Bool) async throws {
         guard mode == .audio else {
             throw EchoError.invalidMode("Cannot mute/unmute in text mode")
@@ -685,8 +622,6 @@ public class Conversation {
     }
 
     /// Sets the audio output device
-    /// - Parameter device: The audio output device to use
-    /// - Throws: EchoError if not in audio mode or audio is not active
     public func setAudioOutput(device: AudioOutputDeviceType) async throws {
         guard mode == .audio else {
             throw EchoError.invalidMode("Cannot set audio output in text mode")
@@ -720,28 +655,22 @@ public class Conversation {
     }
 
     /// Manually ends the user's turn (for manual turn mode)
-    /// - Throws: EchoError if not in audio mode
     public func endUserTurn() async throws {
         guard mode == .audio else {
             throw EchoError.invalidMode("Cannot end turn in text mode")
         }
 
-        // CRITICAL FIX: Only commit audio buffer in manual mode
-        // In automatic mode, VAD drives the commits - manual calls should be no-ops
         guard case .manual = configuration.turnDetection else {
-            // In automatic mode, don't manually commit - VAD handles it
             return
         }
 
         await turnManager?.endUserTurn()
 
-        // Commit audio buffer and trigger response (manual mode only)
         try await realtimeClient?.send(.inputAudioBufferCommit)
         try await realtimeClient?.send(.responseCreate(response: nil))
     }
 
     /// Interrupts the assistant (stops current response)
-    /// - Throws: EchoError if not in audio mode
     public func interruptAssistant() async throws {
         guard mode == .audio else {
             throw EchoError.invalidMode("Cannot interrupt in text mode")
@@ -749,16 +678,10 @@ public class Conversation {
 
         await turnManager?.interruptAssistant()
 
-        // Cancel current response
         try await realtimeClient?.send(.responseCancel)
     }
 
     /// Updates VAD (Voice Activity Detection) settings at runtime
-    /// - Parameters:
-    ///   - threshold: Detection threshold (0.0-1.0, higher = less sensitive)
-    ///   - silenceDuration: Duration of silence before turn ends
-    ///   - prefixPadding: Audio padding before speech detection
-    /// - Throws: EchoError if not in audio mode or if VAD is not enabled
     public func updateVAD(
         threshold: Double? = nil,
         silenceDuration: Duration? = nil,
@@ -776,7 +699,6 @@ public class Conversation {
             throw EchoError.invalidMode("VAD updates only supported in automatic turn mode")
         }
 
-        // Build updated VAD configuration
         let updatedVAD = VADConfiguration(
             type: currentVAD.type,
             threshold: threshold ?? currentVAD.threshold,
@@ -785,7 +707,6 @@ public class Conversation {
             enableInterruption: currentVAD.enableInterruption
         )
 
-        // Create session update with new VAD settings
         let turnDetectionDict = updatedVAD.toRealtimeFormat()
         let sessionUpdate: [String: Any] = [
             "turn_detection": turnDetectionDict
@@ -795,86 +716,14 @@ public class Conversation {
         try await client.send(.sessionUpdate(session: sessionJSON))
     }
 
-    // MARK: - Event Listeners
-
-    /// Sets up event listeners for audio mode MessageQueue population
-    private func setupAudioModeEventListeners() {
-        let queue = messageQueue
-        let emitter = eventEmitter
-
-        // Listen for user audio buffer committed - creates message slot
-        Task {
-            await emitter.when(.userAudioBufferCommitted) { event in
-                if case .userAudioBufferCommitted(let itemId) = event {
-                    print("[Conversation] 📦 Creating user message slot - itemId: \(itemId)")
-                    await queue.enqueue(
-                        id: itemId,
-                        role: .user,
-                        text: nil,
-                        audioData: nil,
-                        transcriptStatus: .inProgress
-                    )
-                }
-            }
-        }
-
-        // Listen for user transcription completed - updates transcript
-        Task {
-            await emitter.when(.userTranscriptionCompleted) { event in
-                if case .userTranscriptionCompleted(let transcript, let itemId) = event {
-                    print("[Conversation] 📝 Updating user transcript - itemId: \(itemId), text: '\(transcript)'")
-                    await queue.updateTranscript(id: itemId, transcript: transcript)
-                }
-            }
-        }
-
-        // Listen for assistant response created - creates message slot
-        Task {
-            await emitter.when(.assistantResponseCreated) { event in
-                if case .assistantResponseCreated(let itemId) = event {
-                    print("[Conversation] 🤖 Creating assistant message slot - itemId: \(itemId)")
-                    await queue.enqueue(
-                        id: itemId,
-                        role: .assistant,
-                        text: nil,
-                        audioData: nil,
-                        transcriptStatus: .inProgress
-                    )
-                }
-            }
-        }
-
-        // Listen for assistant response done - updates transcript
-        Task {
-            await emitter.when(.assistantResponseDone) { event in
-                if case .assistantResponseDone(let itemId, let text) = event {
-                    print("[Conversation] ✅ Finalizing assistant message - itemId: \(itemId), text: '\(text)'")
-                    await queue.updateTranscript(id: itemId, transcript: text)
-                }
-            }
-        }
-    }
-
-    /// Sets up event listeners for text mode MessageQueue population
-    private func setupTextModeEventListeners() {
-        // In text mode, messages are added directly to the queue by ResponsesClient
-        // No need for event listeners - they would cause duplicates
-        // The ResponsesClient should directly add messages to MessageQueue
-    }
-
     // MARK: - Send With Response (Convenience Method)
     
     /// Sends a text message and waits for the complete response
-    /// This is a convenience method for text mode that ensures the response is returned
-    /// - Parameter text: The message text
-    /// - Returns: The assistant's response message
-    /// - Throws: EchoError if sending fails or not in text mode
     public func sendWithResponse(_ text: String) async throws -> Message? {
         guard mode == .text else {
             throw EchoError.invalidMode("sendWithResponse only available in text mode")
         }
         
-        // For now, just call sendMessage which works properly
         return try await sendMessage(text)
     }
     

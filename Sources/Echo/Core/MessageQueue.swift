@@ -25,6 +25,13 @@ public actor MessageQueue {
     public init(eventEmitter: EventEmitter) {
         self.eventEmitter = eventEmitter
     }
+    
+    deinit {
+        // Finish all continuations to signal stream completion
+        for (_, continuation) in continuations {
+            continuation.finish()
+        }
+    }
 
     // MARK: - Nested Types
 

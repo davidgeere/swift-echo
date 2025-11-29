@@ -225,11 +225,13 @@ struct TextResponseReturnTest {
         
         let errorTracker = ErrorTracker()
         
-        // Subscribe to error events
-        echo.when(.error) { event in
-            if case let .error(error) = event {
-                if case let EchoError.invalidResponse(msg) = error {
-                    await errorTracker.recordError(msg)
+        // Use events stream to observe error events
+        let eventTask = Task {
+            for await event in echo.events {
+                if case let .error(error) = event {
+                    if case let EchoError.invalidResponse(msg) = error {
+                        await errorTracker.recordError(msg)
+                    }
                 }
             }
         }
@@ -248,5 +250,7 @@ struct TextResponseReturnTest {
         }
         // If we get a response, that's also valid (model completed successfully)
         // The important thing is that we handle both cases gracefully
+        
+        eventTask.cancel()
     }
 }

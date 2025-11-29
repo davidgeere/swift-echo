@@ -97,6 +97,20 @@ public enum EchoEvent: Sendable {
     ///   - toolCallId: The ID of the tool call this result is for
     ///   - result: The tool execution result
     case toolResultSubmitted(toolCallId: String, result: String)
+    
+    /// Tool execution completed successfully
+    /// - Parameters:
+    ///   - toolCallId: The ID of the tool call
+    ///   - toolName: The name of the tool that was executed
+    ///   - output: The tool's output
+    case toolExecutionCompleted(toolCallId: String, toolName: String, output: String)
+    
+    /// Tool execution failed with an error
+    /// - Parameters:
+    ///   - toolCallId: The ID of the tool call
+    ///   - toolName: The name of the tool that failed
+    ///   - error: The error message
+    case toolExecutionFailed(toolCallId: String, toolName: String, error: String)
 
     // MARK: - Message Events
 
@@ -191,6 +205,10 @@ public enum EchoEvent: Sendable {
             return .toolCallRequested
         case .toolResultSubmitted:
             return .toolResultSubmitted
+        case .toolExecutionCompleted:
+            return .toolExecutionCompleted
+        case .toolExecutionFailed:
+            return .toolExecutionFailed
         case .messageFinalized:
             return .messageFinalized
         case .connectionStatusChanged:
