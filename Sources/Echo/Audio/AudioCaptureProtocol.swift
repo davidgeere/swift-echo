@@ -8,8 +8,13 @@ import Foundation
 /// Allows injecting mock audio capture for testing without microphone hardware
 public protocol AudioCaptureProtocol: Actor {
     /// Starts capturing audio
-    /// - Parameter onAudioChunk: Callback that receives base64-encoded audio chunks
-    func start(onAudioChunk: @escaping @Sendable (String) async -> Void) async throws
+    /// - Parameters:
+    ///   - onAudioChunk: Callback that receives base64-encoded audio chunks
+    ///   - onAudioLevel: Optional callback for audio level changes
+    func start(
+        onAudioChunk: @escaping @Sendable (String) async -> Void,
+        onAudioLevel: (@Sendable (Double) -> Void)?
+    ) async throws
 
     /// Stops capturing audio
     func stop() async

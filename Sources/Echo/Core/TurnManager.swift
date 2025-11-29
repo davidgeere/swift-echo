@@ -40,8 +40,11 @@ public actor TurnManager {
     /// Turn management mode
     private(set) var mode: TurnMode
 
-    /// Event emitter for publishing turn changes
+    /// Event emitter for publishing turn changes (observations only)
     private let eventEmitter: EventEmitter
+    
+    /// Delegate for internal coordination (replaces event-based control flow)
+    private weak var delegate: (any TurnManagerDelegate)?
 
     /// Timer task for manual mode timeouts
     private var turnTimer: Task<Void, Never>?
@@ -52,9 +55,17 @@ public actor TurnManager {
     /// - Parameters:
     ///   - mode: The turn management mode
     ///   - eventEmitter: Event emitter for publishing events
-    public init(mode: TurnMode, eventEmitter: EventEmitter) {
+    ///   - delegate: Optional delegate for internal coordination
+    public init(mode: TurnMode, eventEmitter: EventEmitter, delegate: (any TurnManagerDelegate)? = nil) {
         self.mode = mode
         self.eventEmitter = eventEmitter
+        self.delegate = delegate
+    }
+    
+    /// Sets the delegate for internal coordination
+    /// - Parameter delegate: The delegate to receive internal events
+    public func setDelegate(_ delegate: (any TurnManagerDelegate)?) {
+        self.delegate = delegate
     }
 
     // MARK: - Turn Management
@@ -69,14 +80,17 @@ public actor TurnManager {
         currentSpeaker = .user
         turnTimer?.cancel()
 
-        // Emit BOTH events - specific and turn change
+        // Emit events for observation (side-effects only)
         await eventEmitter.emit(.userStartedSpeaking)
         await eventEmitter.emit(.turnChanged(speaker: .user))
 
-        // Interrupt assistant if needed
+        // Interrupt assistant if needed - use delegate for direct control flow
         if case .automatic = mode {
             if wasAssistantSpeaking {
+                // Emit event for observation
                 await eventEmitter.emit(.assistantInterrupted)
+                // Call delegate directly for control flow
+                await delegate?.turnManagerDidRequestInterruption(self)
             }
         }
     }
@@ -152,7 +166,15 @@ public actor TurnManager {
         currentSpeaker = .none
         turnTimer?.cancel()
 
+        // Emit event for observation
         await eventEmitter.emit(.assistantInterrupted)
+        // Call delegate directly for control flow
+        await delegate?.turnManagerDidRequestInterruption(self)
+    }
+    
+    deinit {
+        // Cancel any pending timer task
+        turnTimer?.cancel()
     }
 
     /// Updates the turn mode

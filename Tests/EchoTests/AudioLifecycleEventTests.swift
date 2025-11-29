@@ -45,10 +45,17 @@ struct AudioLifecycleEventTests {
         let emitter = EventEmitter()
         let state = AudioLifecycleTestState()
         
-        // Register handler for audioStarting
-        await emitter.when(.audioStarting) { _ in
-            await state.recordEvent(.audioStarting)
+        // Subscribe to events using stream (v2.0 pattern)
+        let eventTask = Task {
+            for await event in emitter.events {
+                if case .audioStarting = event {
+                    await state.recordEvent(.audioStarting)
+                }
+            }
         }
+        
+        // Small delay to ensure listener is ready
+        try await Task.sleep(nanoseconds: 10_000_000)
         
         // Create RealtimeClient with mock audio factories
         let config = RealtimeClientConfiguration(
@@ -74,6 +81,12 @@ struct AudioLifecycleEventTests {
         // Start audio - should emit audioStarting
         try await client.startAudio()
         
+        // Small delay to ensure events are processed
+        try await Task.sleep(nanoseconds: 10_000_000)
+        
+        // Cancel the event task
+        eventTask.cancel()
+        
         // Verify audioStarting was received
         let startingReceived = await state.audioStartingReceived
         #expect(startingReceived == true)
@@ -84,14 +97,22 @@ struct AudioLifecycleEventTests {
         let emitter = EventEmitter()
         let state = AudioLifecycleTestState()
         
-        // Register handlers for audio lifecycle events
-        await emitter.when(.audioStarting) { _ in
-            await state.recordEvent(.audioStarting)
+        // Subscribe to events using stream (v2.0 pattern)
+        let eventTask = Task {
+            for await event in emitter.events {
+                switch event {
+                case .audioStarting:
+                    await state.recordEvent(.audioStarting)
+                case .audioStarted:
+                    await state.recordEvent(.audioStarted)
+                default:
+                    break
+                }
+            }
         }
         
-        await emitter.when(.audioStarted) { _ in
-            await state.recordEvent(.audioStarted)
-        }
+        // Small delay to ensure listener is ready
+        try await Task.sleep(nanoseconds: 10_000_000)
         
         // Create RealtimeClient with mock audio factories
         let config = RealtimeClientConfiguration(
@@ -120,6 +141,9 @@ struct AudioLifecycleEventTests {
         // Small delay to ensure events are processed
         try await Task.sleep(nanoseconds: 10_000_000)
         
+        // Cancel the event task
+        eventTask.cancel()
+        
         // Verify both events were received
         let startingReceived = await state.audioStartingReceived
         let startedReceived = await state.audioStartedReceived
@@ -138,18 +162,24 @@ struct AudioLifecycleEventTests {
         let emitter = EventEmitter()
         let state = AudioLifecycleTestState()
         
-        // Register handlers for audio lifecycle events
-        await emitter.when(.audioStarting) { _ in
-            await state.recordEvent(.audioStarting)
+        // Subscribe to events using stream (v2.0 pattern)
+        let eventTask = Task {
+            for await event in emitter.events {
+                switch event {
+                case .audioStarting:
+                    await state.recordEvent(.audioStarting)
+                case .audioStarted:
+                    await state.recordEvent(.audioStarted)
+                case .audioStopped:
+                    await state.recordEvent(.audioStopped)
+                default:
+                    break
+                }
+            }
         }
         
-        await emitter.when(.audioStarted) { _ in
-            await state.recordEvent(.audioStarted)
-        }
-        
-        await emitter.when(.audioStopped) { _ in
-            await state.recordEvent(.audioStopped)
-        }
+        // Small delay to ensure listener is ready
+        try await Task.sleep(nanoseconds: 10_000_000)
         
         // Create RealtimeClient with mock audio factories
         let config = RealtimeClientConfiguration(
@@ -184,6 +214,9 @@ struct AudioLifecycleEventTests {
         // Small delay to ensure events are processed
         try await Task.sleep(nanoseconds: 10_000_000)
         
+        // Cancel the event task
+        eventTask.cancel()
+        
         // Verify all events were received in correct order
         let startingReceived = await state.audioStartingReceived
         let startedReceived = await state.audioStartedReceived
@@ -204,10 +237,17 @@ struct AudioLifecycleEventTests {
         let emitter = EventEmitter()
         let state = AudioLifecycleTestState()
         
-        // Register handler for audioStopped only
-        await emitter.when(.audioStopped) { _ in
-            await state.recordEvent(.audioStopped)
+        // Subscribe to events using stream (v2.0 pattern)
+        let eventTask = Task {
+            for await event in emitter.events {
+                if case .audioStopped = event {
+                    await state.recordEvent(.audioStopped)
+                }
+            }
         }
+        
+        // Small delay to ensure listener is ready
+        try await Task.sleep(nanoseconds: 10_000_000)
         
         // Create RealtimeClient with mock audio factories
         let config = RealtimeClientConfiguration(
@@ -236,6 +276,9 @@ struct AudioLifecycleEventTests {
         // Small delay to ensure events are processed
         try await Task.sleep(nanoseconds: 10_000_000)
         
+        // Cancel the event task
+        eventTask.cancel()
+        
         // Verify audioStopped was NOT received
         let stoppedReceived = await state.audioStoppedReceived
         #expect(stoppedReceived == false)
@@ -246,23 +289,30 @@ struct AudioLifecycleEventTests {
         let emitter = EventEmitter()
         let state = AudioLifecycleTestState()
         
-        // Register handlers for audio lifecycle events
-        await emitter.when(.audioStarting) { _ in
-            await state.recordEvent(.audioStarting)
+        // Subscribe to events using stream (v2.0 pattern)
+        let eventTask = Task {
+            for await event in emitter.events {
+                switch event {
+                case .audioStarting:
+                    await state.recordEvent(.audioStarting)
+                case .audioStarted:
+                    await state.recordEvent(.audioStarted)
+                case .audioStopped:
+                    await state.recordEvent(.audioStopped)
+                default:
+                    break
+                }
+            }
         }
         
-        await emitter.when(.audioStarted) { _ in
-            await state.recordEvent(.audioStarted)
-        }
-        
-        await emitter.when(.audioStopped) { _ in
-            await state.recordEvent(.audioStopped)
-        }
+        // Small delay to ensure listener is ready
+        try await Task.sleep(nanoseconds: 10_000_000)
         
         // Create a mock audio capture that throws an error
         actor FailingMockAudioCapture: AudioCaptureProtocol {
             let audioLevelStream: AsyncStream<Double>
             private let levelContinuation: AsyncStream<Double>.Continuation
+            var isActive: Bool = false
             
             init() {
                 var continuation: AsyncStream<Double>.Continuation?
@@ -272,7 +322,10 @@ struct AudioLifecycleEventTests {
                 levelContinuation = continuation!
             }
             
-            func start(onAudioChunk: @escaping @Sendable (String) async -> Void) async throws {
+            func start(
+                onAudioChunk: @escaping @Sendable (String) async -> Void,
+                onAudioLevel: (@Sendable (Double) -> Void)?
+            ) async throws {
                 throw RealtimeError.audioCaptureFailed(
                     NSError(domain: "Test", code: -1, userInfo: [
                         NSLocalizedDescriptionKey: "Mock failure"
@@ -317,6 +370,9 @@ struct AudioLifecycleEventTests {
         // Small delay to ensure events are processed
         try await Task.sleep(nanoseconds: 10_000_000)
         
+        // Cancel the event task
+        eventTask.cancel()
+        
         // Verify audioStarting was received
         let startingReceived = await state.audioStartingReceived
         #expect(startingReceived == true)
@@ -341,18 +397,24 @@ struct AudioLifecycleEventTests {
         let emitter = EventEmitter()
         let state = AudioLifecycleTestState()
         
-        // Register handlers for all audio lifecycle events
-        await emitter.when(.audioStarting) { _ in
-            await state.recordEvent(.audioStarting)
+        // Subscribe to events using stream (v2.0 pattern)
+        let eventTask = Task {
+            for await event in emitter.events {
+                switch event {
+                case .audioStarting:
+                    await state.recordEvent(.audioStarting)
+                case .audioStarted:
+                    await state.recordEvent(.audioStarted)
+                case .audioStopped:
+                    await state.recordEvent(.audioStopped)
+                default:
+                    break
+                }
+            }
         }
         
-        await emitter.when(.audioStarted) { _ in
-            await state.recordEvent(.audioStarted)
-        }
-        
-        await emitter.when(.audioStopped) { _ in
-            await state.recordEvent(.audioStopped)
-        }
+        // Small delay to ensure listener is ready
+        try await Task.sleep(nanoseconds: 10_000_000)
         
         // Create RealtimeClient with mock audio factories
         let config = RealtimeClientConfiguration(
@@ -382,6 +444,9 @@ struct AudioLifecycleEventTests {
         await client.stopAudio()
         try await Task.sleep(nanoseconds: 10_000_000)
         
+        // Cancel the event task
+        eventTask.cancel()
+        
         // Verify all events were received
         let startingReceived = await state.audioStartingReceived
         let startedReceived = await state.audioStartedReceived
@@ -399,4 +464,3 @@ struct AudioLifecycleEventTests {
         #expect(eventOrder[2] == .audioStopped)
     }
 }
-

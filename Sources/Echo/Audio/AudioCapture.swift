@@ -22,6 +22,9 @@ public actor AudioCapture: AudioCaptureProtocol {
     /// Audio level stream for visualizations
     public let audioLevelStream: AsyncStream<Double>
     private let audioLevelContinuation: AsyncStream<Double>.Continuation
+    
+    /// Optional callback for audio level changes (direct call, no Task spawning)
+    private var onAudioLevelCallback: (@Sendable (Double) -> Void)?
 
     // MARK: - Initialization
 
@@ -41,11 +44,15 @@ public actor AudioCapture: AudioCaptureProtocol {
     // MARK: - Capture Control
 
     /// Starts capturing audio from the microphone
-    /// - Parameter onAudioChunk: Callback for each audio chunk (base64-encoded)
+    /// - Parameters:
+    ///   - onAudioChunk: Callback for each audio chunk (base64-encoded)
+    ///   - onAudioLevel: Optional callback for audio level changes (direct, no Task needed)
     /// - Throws: RealtimeError if capture fails to start
     public func start(
-        onAudioChunk: @escaping @Sendable (String) async -> Void
+        onAudioChunk: @escaping @Sendable (String) async -> Void,
+        onAudioLevel: (@Sendable (Double) -> Void)? = nil
     ) async throws {
+        self.onAudioLevelCallback = onAudioLevel
         guard !isCapturing else {
             throw RealtimeError.audioCaptureFailed(
                 NSError(domain: "AudioCapture", code: -1, userInfo: [
@@ -109,7 +116,14 @@ public actor AudioCapture: AudioCaptureProtocol {
                         // Note: AVAudioPCMBuffer is not Sendable, but we're using it immediately in a controlled manner
                         nonisolated(unsafe) let capturedBuffer = buffer
                         let level = AudioLevel.calculate(from: capturedBuffer)
+                        
+                        // Yield to stream (for backward compatibility)
                         self.audioLevelContinuation.yield(level)
+                        
+                        // Call direct callback if set (no Task spawning needed by caller)
+                        if let callback = await self.onAudioLevelCallback {
+                            callback(level)
+                        }
 
                         // Convert to target format
                         let audioData = try await self.processor.convert(capturedBuffer)
@@ -151,6 +165,7 @@ public actor AudioCapture: AudioCaptureProtocol {
         audioEngine = nil
         inputNode = nil
         isCapturing = false
+        onAudioLevelCallback = nil
 
         audioLevelContinuation.yield(0.0)
     }
