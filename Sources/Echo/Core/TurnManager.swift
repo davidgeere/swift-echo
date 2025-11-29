@@ -40,8 +40,11 @@ public actor TurnManager {
     /// Turn management mode
     private(set) var mode: TurnMode
 
-    /// Event emitter for publishing turn changes
+    /// Event emitter for publishing turn changes (external observation)
     private let eventEmitter: EventEmitter
+    
+    /// Delegate for internal coordination (replaces internal event listeners)
+    private weak var delegate: (any TurnManagerDelegate)?
 
     /// Timer task for manual mode timeouts
     private var turnTimer: Task<Void, Never>?
@@ -52,9 +55,21 @@ public actor TurnManager {
     /// - Parameters:
     ///   - mode: The turn management mode
     ///   - eventEmitter: Event emitter for publishing events
-    public init(mode: TurnMode, eventEmitter: EventEmitter) {
+    ///   - delegate: Optional delegate for internal coordination
+    public init(mode: TurnMode, eventEmitter: EventEmitter, delegate: (any TurnManagerDelegate)? = nil) {
         self.mode = mode
         self.eventEmitter = eventEmitter
+        self.delegate = delegate
+    }
+    
+    /// Sets the delegate for internal coordination
+    /// - Parameter delegate: The delegate to receive callbacks
+    public func setDelegate(_ delegate: (any TurnManagerDelegate)?) {
+        self.delegate = delegate
+    }
+    
+    deinit {
+        turnTimer?.cancel()
     }
 
     // MARK: - Turn Management
@@ -69,13 +84,16 @@ public actor TurnManager {
         currentSpeaker = .user
         turnTimer?.cancel()
 
-        // Emit BOTH events - specific and turn change
+        // Emit events for external observation
         await eventEmitter.emit(.userStartedSpeaking)
         await eventEmitter.emit(.turnChanged(speaker: .user))
 
         // Interrupt assistant if needed
         if case .automatic = mode {
             if wasAssistantSpeaking {
+                // Use delegate for internal coordination (replaces event listener)
+                await delegate?.turnManagerDidRequestInterruption(self)
+                // Also emit for external observation
                 await eventEmitter.emit(.assistantInterrupted)
             }
         }

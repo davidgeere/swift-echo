@@ -8,7 +8,7 @@ import Observation
 /// Manages a single conversation with seamless mode switching between audio and text
 @MainActor
 @Observable
-public class Conversation {
+public class Conversation: @preconcurrency RealtimeClientDelegate {
     // MARK: - Properties
 
     /// Unique conversation ID
@@ -46,6 +46,9 @@ public class Conversation {
 
     /// Registered MCP servers
     private let mcpServers: [MCPServer]
+    
+    /// Tool executor for direct tool execution (replaces event-based coordination)
+    private let toolExecutor: ToolExecutor
 
     /// Optional audio capture factory for testing
     private let audioCaptureFactory: (@Sendable () async -> any AudioCaptureProtocol)?
@@ -84,6 +87,7 @@ public class Conversation {
     ///   - eventEmitter: Event emitter for publishing events
     ///   - tools: Registered tools for function calling
     ///   - mcpServers: Registered MCP servers
+    ///   - toolExecutor: Tool executor for direct tool execution
     ///   - audioCaptureFactory: Optional factory for creating audio capture (for testing)
     ///   - audioPlaybackFactory: Optional factory for creating audio playback (for testing)
     init(
@@ -94,6 +98,7 @@ public class Conversation {
         eventEmitter: EventEmitter,
         tools: [Tool] = [],
         mcpServers: [MCPServer] = [],
+        toolExecutor: ToolExecutor,
         audioCaptureFactory: (@Sendable () async -> any AudioCaptureProtocol)? = nil,
         audioPlaybackFactory: (@Sendable () async -> any AudioPlaybackProtocol)? = nil
     ) async throws {
@@ -105,6 +110,7 @@ public class Conversation {
         self.eventEmitter = eventEmitter
         self.mcpServers = mcpServers
         self.tools = tools
+        self.toolExecutor = toolExecutor
         self.messageQueue = MessageQueue(eventEmitter: eventEmitter)
         self.audioCaptureFactory = audioCaptureFactory
         self.audioPlaybackFactory = audioPlaybackFactory
@@ -142,28 +148,29 @@ public class Conversation {
             voice: configuration.voice,
             audioFormat: configuration.audioFormat,
             turnDetection: configuration.turnDetection,
-            instructions: systemMessage,  // ✅ FIXED: Use actual systemMessage
+            instructions: systemMessage,
             enableTranscription: configuration.enableTranscription,
             startAudioAutomatically: true,
             temperature: configuration.temperature,
             maxOutputTokens: configuration.maxTokens
         )
 
-        // CRITICAL FIX: Pass TurnManager to RealtimeClient for event routing
-        // Also pass audio factories for dependency injection (testing)
+        // NEW ARCHITECTURE: Pass delegate (self) and toolExecutor for direct coordination
+        // This replaces the event-based Task listeners
         let client = RealtimeClient(
             apiKey: apiKey,
             configuration: realtimeConfig,
             eventEmitter: eventEmitter,
             tools: tools,
             mcpServers: mcpServers,
-            turnManager: turnManager,  // ✅ Wire TurnManager into event flow
-            audioCaptureFactory: audioCaptureFactory,  // ✅ Enable mock audio for testing
-            audioPlaybackFactory: audioPlaybackFactory  // ✅ Enable mock audio for testing
+            turnManager: turnManager,
+            delegate: self,  // ✅ NEW: Direct delegate instead of event listeners
+            toolExecutor: toolExecutor,  // ✅ NEW: Direct tool execution
+            audioCaptureFactory: audioCaptureFactory,
+            audioPlaybackFactory: audioPlaybackFactory
         )
 
-        // Set up event listeners for MessageQueue population
-        setupAudioModeEventListeners()
+        // NOTE: No more setupAudioModeEventListeners() - delegate pattern replaces it
 
         // Connect and start session - this may throw
         do {
@@ -795,64 +802,71 @@ public class Conversation {
         try await client.send(.sessionUpdate(session: sessionJSON))
     }
 
-    // MARK: - Event Listeners
+    // MARK: - RealtimeClientDelegate Implementation (Replaces Event Listeners)
 
-    /// Sets up event listeners for audio mode MessageQueue population
-    private func setupAudioModeEventListeners() {
-        let queue = messageQueue
-        let emitter = eventEmitter
+    /// Called when user audio buffer is committed - creates message slot
+    public func realtimeClient(_ client: RealtimeClient, didCommitUserAudioBuffer itemId: String) async {
+        print("[Conversation] 📦 Creating user message slot - itemId: \(itemId)")
+        await messageQueue.enqueue(
+            id: itemId,
+            role: .user,
+            text: nil,
+            audioData: nil,
+            transcriptStatus: .inProgress
+        )
+    }
 
-        // Listen for user audio buffer committed - creates message slot
-        Task {
-            await emitter.when(.userAudioBufferCommitted) { event in
-                if case .userAudioBufferCommitted(let itemId) = event {
-                    print("[Conversation] 📦 Creating user message slot - itemId: \(itemId)")
-                    await queue.enqueue(
-                        id: itemId,
-                        role: .user,
-                        text: nil,
-                        audioData: nil,
-                        transcriptStatus: .inProgress
-                    )
-                }
-            }
-        }
+    /// Called when user transcription is completed - updates transcript
+    public func realtimeClient(_ client: RealtimeClient, didReceiveTranscript transcript: String, itemId: String) async {
+        print("[Conversation] 📝 Updating user transcript - itemId: \(itemId), text: '\(transcript)'")
+        await messageQueue.updateTranscript(id: itemId, transcript: transcript)
+    }
 
-        // Listen for user transcription completed - updates transcript
-        Task {
-            await emitter.when(.userTranscriptionCompleted) { event in
-                if case .userTranscriptionCompleted(let transcript, let itemId) = event {
-                    print("[Conversation] 📝 Updating user transcript - itemId: \(itemId), text: '\(transcript)'")
-                    await queue.updateTranscript(id: itemId, transcript: transcript)
-                }
-            }
-        }
+    /// Called when assistant response is created - creates message slot
+    public func realtimeClient(_ client: RealtimeClient, didCreateAssistantResponse itemId: String) async {
+        print("[Conversation] 🤖 Creating assistant message slot - itemId: \(itemId)")
+        await messageQueue.enqueue(
+            id: itemId,
+            role: .assistant,
+            text: nil,
+            audioData: nil,
+            transcriptStatus: .inProgress
+        )
+    }
 
-        // Listen for assistant response created - creates message slot
-        Task {
-            await emitter.when(.assistantResponseCreated) { event in
-                if case .assistantResponseCreated(let itemId) = event {
-                    print("[Conversation] 🤖 Creating assistant message slot - itemId: \(itemId)")
-                    await queue.enqueue(
-                        id: itemId,
-                        role: .assistant,
-                        text: nil,
-                        audioData: nil,
-                        transcriptStatus: .inProgress
-                    )
-                }
-            }
-        }
+    /// Called when assistant response is done - updates transcript
+    public func realtimeClient(_ client: RealtimeClient, didReceiveAssistantResponse text: String, itemId: String) async {
+        print("[Conversation] ✅ Finalizing assistant message - itemId: \(itemId), text: '\(text)'")
+        await messageQueue.updateTranscript(id: itemId, transcript: text)
+    }
 
-        // Listen for assistant response done - updates transcript
-        Task {
-            await emitter.when(.assistantResponseDone) { event in
-                if case .assistantResponseDone(let itemId, let text) = event {
-                    print("[Conversation] ✅ Finalizing assistant message - itemId: \(itemId), text: '\(text)'")
-                    await queue.updateTranscript(id: itemId, transcript: text)
-                }
-            }
-        }
+    /// Called when a tool call is received - handled by toolExecutor, this is for additional processing
+    public func realtimeClient(_ client: RealtimeClient, didReceiveToolCall call: ToolCall) async {
+        // Tool execution is handled directly by toolExecutor in RealtimeClient
+        // This callback is for any additional processing the Conversation might need
+        print("[Conversation] 🔧 Tool call received: \(call.name)")
+    }
+
+    /// Called when user speech is detected
+    public func realtimeClientDidDetectUserSpeech(_ client: RealtimeClient) async {
+        // Speech detection is already handled by TurnManager in RealtimeClient
+        // This callback is for any additional processing
+    }
+
+    /// Called when user silence is detected
+    public func realtimeClientDidDetectUserSilence(_ client: RealtimeClient) async {
+        // Silence detection is already handled by TurnManager in RealtimeClient
+        // This callback is for any additional processing
+    }
+
+    /// Called when assistant starts speaking
+    public func realtimeClientDidStartAssistantSpeaking(_ client: RealtimeClient) async {
+        // Already handled by TurnManager
+    }
+
+    /// Called when assistant finishes speaking
+    public func realtimeClientDidFinishAssistantSpeaking(_ client: RealtimeClient) async {
+        // Already handled by TurnManager
     }
 
     /// Sets up event listeners for text mode MessageQueue population

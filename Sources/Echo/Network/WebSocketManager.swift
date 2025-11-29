@@ -136,7 +136,111 @@ public actor WebSocketManager {
         try await task.send(message)
     }
 
-    // MARK: - Private Helpers
+    // MARK: - Callback-Based Receiving (New Pattern)
+    
+    /// Message callback type for callback-based receiving
+    public typealias MessageCallback = @Sendable (String) async -> Void
+    
+    /// Disconnect callback type for callback-based receiving
+    public typealias DisconnectCallback = @Sendable () async -> Void
+    
+    /// Stored callbacks for callback-based pattern
+    private var onMessageCallback: MessageCallback?
+    private var onDisconnectCallback: DisconnectCallback?
+    
+    /// Starts receiving messages with direct callbacks instead of streams.
+    /// This eliminates the need for external Tasks iterating streams.
+    /// - Parameters:
+    ///   - onMessage: Called when a message is received
+    ///   - onDisconnect: Called when disconnected
+    public func startReceiving(
+        onMessage: @escaping MessageCallback,
+        onDisconnect: @escaping DisconnectCallback
+    ) {
+        self.onMessageCallback = onMessage
+        self.onDisconnectCallback = onDisconnect
+        
+        // Start the receive loop
+        receiveMessageWithCallback()
+    }
+    
+    /// Receives messages and calls the callback directly
+    private nonisolated func receiveMessageWithCallback() {
+        Task {
+            await _receiveMessageWithCallback()
+        }
+    }
+    
+    private func _receiveMessageWithCallback() async {
+        guard let task = webSocketTask, isConnected else {
+            return
+        }
+        
+        do {
+            let message = try await task.receive()
+            
+            switch message {
+            case .string(let text):
+                // Call the callback directly instead of yielding to stream
+                if let callback = onMessageCallback {
+                    await callback(text)
+                }
+                // Also yield to stream for backwards compatibility
+                messageContinuation.yield(text)
+                
+            case .data(let data):
+                if let text = String(data: data, encoding: .utf8) {
+                    if let callback = onMessageCallback {
+                        await callback(text)
+                    }
+                    messageContinuation.yield(text)
+                }
+                
+            @unknown default:
+                break
+            }
+            
+            // Continue receiving if still connected
+            if isConnected {
+                receiveMessageWithCallback()
+            }
+        } catch {
+            if !isIntentionalDisconnect {
+                print("[WebSocketManager] ❌ Receive error: \(error)")
+            }
+            handleDisconnectionWithCallback()
+        }
+    }
+    
+    private func handleDisconnectionWithCallback() {
+        let wasIntentional = isIntentionalDisconnect
+        let callback = onDisconnectCallback
+        
+        cleanupResourcesWithCallbacks()
+        
+        if !wasIntentional {
+            connectionStateContinuation.yield(false)
+            
+            // Call disconnect callback
+            if let callback = callback {
+                Task {
+                    await callback()
+                }
+            }
+        }
+    }
+    
+    private func cleanupResourcesWithCallbacks() {
+        isConnected = false
+        isIntentionalDisconnect = false
+        onMessageCallback = nil
+        onDisconnectCallback = nil
+        webSocketTask = nil
+        urlSession?.invalidateAndCancel()
+        urlSession = nil
+    }
+    
+    // MARK: - Private Helpers (Legacy Stream Pattern)
 
     private nonisolated func receiveMessage() {
         Task {

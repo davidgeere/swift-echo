@@ -110,12 +110,18 @@ struct AudioOutputDeviceEventTests {
         let emitter = EventEmitter()
         let state = AudioOutputTestState()
         
-        // Register handler for audioOutputChanged
-        await emitter.when(.audioOutputChanged) { event in
-            if case .audioOutputChanged(let device) = event {
-                await state.recordEvent(device)
+        // Use stream-based event listening (v2.0 pattern)
+        let listenTask = Task {
+            for await event in emitter.events {
+                if case .audioOutputChanged(let device) = event {
+                    await state.recordEvent(device)
+                    break
+                }
             }
         }
+        
+        // Wait for listener to be ready
+        try await Task.sleep(nanoseconds: 10_000_000)
         
         // Create RealtimeClient with mock playback
         let config = RealtimeClientConfiguration(
@@ -141,7 +147,10 @@ struct AudioOutputDeviceEventTests {
         try await client.setAudioOutput(device: .builtInSpeaker)
         
         // Small delay to let event propagate
-        try await Task.sleep(nanoseconds: 10_000_000)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        
+        // Cancel listener task
+        listenTask.cancel()
         
         // Verify event was received
         let eventReceived = await state.eventReceived

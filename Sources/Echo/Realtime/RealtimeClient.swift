@@ -42,6 +42,19 @@ public actor RealtimeClient {
     private var currentAssistantItemId: String?
     private var currentAssistantText: String = ""
 
+    // MARK: - Delegate Pattern (New Architecture)
+    
+    /// Delegate for internal coordination (replaces event-based Tasks)
+    private weak var delegate: (any RealtimeClientDelegate)?
+    
+    /// Tool executor for direct tool execution (replaces event-based tool handling)
+    private var toolExecutor: (any ToolExecuting)?
+    
+    /// Stored NotificationCenter observer for cleanup
+    #if os(iOS)
+    private var routeChangeObserver: NSObjectProtocol?
+    #endif
+
     // MARK: - Initialization
 
     /// Creates a Realtime API client
@@ -52,6 +65,8 @@ public actor RealtimeClient {
     ///   - tools: Registered tools for function calling
     ///   - mcpServers: Registered MCP servers
     ///   - turnManager: Optional TurnManager for managing speaking turns
+    ///   - delegate: Optional delegate for internal coordination
+    ///   - toolExecutor: Optional tool executor for direct tool execution
     ///   - audioCaptureFactory: Optional factory for creating audio capture (for testing)
     ///   - audioPlaybackFactory: Optional factory for creating audio playback (for testing)
     public init(
@@ -61,6 +76,8 @@ public actor RealtimeClient {
         tools: [Tool] = [],
         mcpServers: [MCPServer] = [],
         turnManager: TurnManager? = nil,
+        delegate: (any RealtimeClientDelegate)? = nil,
+        toolExecutor: (any ToolExecuting)? = nil,
         audioCaptureFactory: (@Sendable () async -> any AudioCaptureProtocol)? = nil,
         audioPlaybackFactory: (@Sendable () async -> any AudioPlaybackProtocol)? = nil
     ) {
@@ -70,24 +87,46 @@ public actor RealtimeClient {
         self.tools = tools
         self.mcpServers = mcpServers
         self.turnManager = turnManager
+        self.delegate = delegate
+        self.toolExecutor = toolExecutor
         self.webSocket = WebSocketManager()
         self.audioCaptureFactory = audioCaptureFactory
         self.audioPlaybackFactory = audioPlaybackFactory
-
-        // Listen for assistant interruption events to stop audio playback
-        Task {
-            await eventEmitter.when(.assistantInterrupted) { [weak self] _ in
-                await self?.stopAudioPlayback()
-            }
-        }
-
-        // Listen for tool result submissions and send them to OpenAI
-        Task {
-            await eventEmitter.when(.toolResultSubmitted) { [weak self] event in
-                guard case .toolResultSubmitted(let toolCallId, let result) = event else { return }
-                await self?.submitToolResult(toolCallId: toolCallId, output: result)
-            }
-        }
+        
+        // NOTE: No more spawning Tasks to listen for events!
+        // The delegate pattern replaces event listeners for internal coordination.
+        // Tool results are now handled via direct submitToolResult() calls from the owner.
+    }
+    
+    // MARK: - Delegate Configuration
+    
+    /// Sets the delegate for internal coordination
+    /// - Parameter delegate: The delegate to receive callbacks
+    public func setDelegate(_ delegate: (any RealtimeClientDelegate)?) {
+        self.delegate = delegate
+    }
+    
+    /// Sets the tool executor for direct tool execution
+    /// - Parameter executor: The tool executor
+    public func setToolExecutor(_ executor: (any ToolExecuting)?) {
+        self.toolExecutor = executor
+    }
+    
+    // MARK: - Direct Method Calls (Replaces Event Listeners)
+    
+    /// Called by owner to interrupt audio playback.
+    /// Replaces the event listener for `.assistantInterrupted`.
+    public func interruptPlayback() async {
+        await stopAudioPlayback()
+    }
+    
+    /// Submits a tool result back to OpenAI.
+    /// Called directly by the owner instead of via event emission.
+    /// - Parameters:
+    ///   - callId: The tool call ID
+    ///   - output: The tool result output
+    public func submitToolResultDirect(callId: String, output: String) async {
+        await submitToolResult(toolCallId: callId, output: output)
     }
 
     /// Stops audio playback (for interruptions)
@@ -196,12 +235,21 @@ public actor RealtimeClient {
 
         // Stop audio
         await stopAudio()
+        
+        // Remove audio route change observer (cleanup)
+        #if os(iOS)
+        removeAudioRouteChangeObserver()
+        #endif
 
         // Close WebSocket
         await webSocket.disconnect()
 
         sessionState = .disconnected
         sessionId = nil
+        
+        // Clear delegate references
+        delegate = nil
+        toolExecutor = nil
 
         // Emit disconnection event
         await eventEmitter.emit(.connectionStatusChanged(isConnected: false))
@@ -531,6 +579,11 @@ public actor RealtimeClient {
         // Audio buffer committed - creates message slot
         case .inputAudioBufferCommitted(let itemId, _):
             currentUserItemId = itemId
+            
+            // Notify delegate directly (replaces event listener Task)
+            await delegate?.realtimeClient(self, didCommitUserAudioBuffer: itemId)
+            
+            // Also emit for external observation
             await eventEmitter.emit(.userAudioBufferCommitted(itemId: itemId))
 
         // Speech detection
@@ -541,6 +594,9 @@ public actor RealtimeClient {
             
             // Emit audio status change
             await eventEmitter.emit(.audioStatusChanged(status: .listening))
+            
+            // Notify delegate directly (replaces event listener Task)
+            await delegate?.realtimeClientDidDetectUserSpeech(self)
 
             // Route through TurnManager if available, otherwise emit directly
             if let turnManager = turnManager {
@@ -553,6 +609,9 @@ public actor RealtimeClient {
             // Emit processing status when speech stops
             await eventEmitter.emit(.audioStatusChanged(status: .processing))
             
+            // Notify delegate directly (replaces event listener Task)
+            await delegate?.realtimeClientDidDetectUserSilence(self)
+            
             // Route through TurnManager if available, otherwise emit directly
             if let turnManager = turnManager {
                 await turnManager.handleUserStoppedSpeaking()
@@ -563,6 +622,9 @@ public actor RealtimeClient {
         // Transcription
         case .conversationItemInputAudioTranscriptionCompleted(let itemId, let transcript):
             currentTranscripts[itemId] = transcript
+            
+            // Notify delegate directly (replaces event listener Task)
+            await delegate?.realtimeClient(self, didReceiveTranscript: transcript, itemId: itemId)
 
             await eventEmitter.emit(.userTranscriptionCompleted(transcript: transcript, itemId: itemId))
 
@@ -598,6 +660,9 @@ public actor RealtimeClient {
         case .responseCreated:
             // Clear previous assistant text
             currentAssistantText = ""
+            
+            // Notify delegate directly
+            await delegate?.realtimeClientDidStartAssistantSpeaking(self)
 
             // Route through TurnManager if available
             if let turnManager = turnManager {
@@ -609,11 +674,18 @@ public actor RealtimeClient {
         case .responseOutputItemAdded(_, _, let item):
             // Track the assistant's response item ID
             currentAssistantItemId = item.id
+            
+            // Notify delegate directly (replaces event listener Task)
+            await delegate?.realtimeClient(self, didCreateAssistantResponse: item.id)
+            
             await eventEmitter.emit(.assistantResponseCreated(itemId: item.id))
 
         case .responseDone:
             // Emit idle status when response completes
             await eventEmitter.emit(.audioStatusChanged(status: .idle))
+            
+            // Notify delegate directly
+            await delegate?.realtimeClientDidFinishAssistantSpeaking(self)
             
             // Route through TurnManager if available
             if let turnManager = turnManager {
@@ -624,19 +696,33 @@ public actor RealtimeClient {
 
             // Emit response done with complete text
             if let itemId = currentAssistantItemId {
+                // Notify delegate directly (replaces event listener Task)
+                await delegate?.realtimeClient(self, didReceiveAssistantResponse: currentAssistantText, itemId: itemId)
+                
                 await eventEmitter.emit(.assistantResponseDone(itemId: itemId, text: currentAssistantText))
                 // Clear for next response
                 currentAssistantItemId = nil
                 currentAssistantText = ""
             }
 
-        // Function calls
+        // Function calls - Use direct tool execution instead of events
         case .responseFunctionCallArgumentsDone(_, _, _, let callId, let name, let argumentsString):
             // Parse arguments string to SendableJSON
             let argumentsData = argumentsString.data(using: .utf8) ?? Data()
             let arguments = (try? SendableJSON.from(data: argumentsData)) ?? .null
             let toolCall = ToolCall(id: callId, name: name, arguments: arguments)
-            await eventEmitter.emit(.toolCallRequested(toolCall: toolCall))
+            
+            // Execute tool directly if executor is set (new pattern)
+            if let executor = toolExecutor {
+                let result = await executor.execute(toolCall: toolCall)
+                // Submit result directly back to OpenAI
+                await submitToolResult(toolCallId: result.toolCallId, output: result.output)
+            } else {
+                // Fall back to delegate notification
+                await delegate?.realtimeClient(self, didReceiveToolCall: toolCall)
+                // Also emit for backwards compatibility (external observation)
+                await eventEmitter.emit(.toolCallRequested(toolCall: toolCall))
+            }
 
         // Rate limits
         case .rateLimitsUpdated(_):
@@ -675,8 +761,14 @@ public actor RealtimeClient {
     private func observeAudioRouteChanges() async {
         let notificationCenter = NotificationCenter.default
         
-        // Set up observer for route changes
-        notificationCenter.addObserver(
+        // Remove existing observer if any (cleanup before re-registering)
+        if let existingObserver = routeChangeObserver {
+            notificationCenter.removeObserver(existingObserver)
+            routeChangeObserver = nil
+        }
+        
+        // Set up observer for route changes and STORE it for cleanup
+        routeChangeObserver = notificationCenter.addObserver(
             forName: AVAudioSession.routeChangeNotification,
             object: nil,
             queue: nil
@@ -691,6 +783,14 @@ public actor RealtimeClient {
                 // Emit event for output change
                 await self.eventEmitter.emit(.audioOutputChanged(device: currentDevice))
             }
+        }
+    }
+    
+    /// Removes the audio route change observer
+    private func removeAudioRouteChangeObserver() {
+        if let observer = routeChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            routeChangeObserver = nil
         }
     }
     #endif
