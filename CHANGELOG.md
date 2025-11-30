@@ -456,6 +456,8 @@ This project follows [Semantic Versioning](https://semver.org/):
 - **MINOR** version for backwards-compatible functionality additions
 - **PATCH** version for backwards-compatible bug fixes
 
+[1.3.0]: https://github.com/davidgeere/swift-echo/releases/tag/v1.3.0
+[1.2.2]: https://github.com/davidgeere/swift-echo/releases/tag/v1.2.2
 [1.2.1]: https://github.com/davidgeere/swift-echo/releases/tag/v1.2.1
 [1.2.0]: https://github.com/davidgeere/swift-echo/releases/tag/v1.2.0
 [1.1.2]: https://github.com/davidgeere/swift-echo/releases/tag/v1.1.2

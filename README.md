@@ -4,12 +4,19 @@ A unified Swift library for OpenAI's Realtime API (WebSocket-based voice) and Ch
 
 [![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
 [![Platform](https://img.shields.io/badge/platform-iOS%2018%20|%20macOS%2014-blue.svg)](https://developer.apple.com)
-[![Version](https://img.shields.io/badge/version-1.2.0-brightgreen.svg)](https://github.com/davidgeere/swift-echo/releases)
+[![Version](https://img.shields.io/badge/version-1.3.0-brightgreen.svg)](https://github.com/davidgeere/swift-echo/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 ## 🚀 Latest Updates
 
-Echo v1.2.0 introduces a new audio output device selection API! Choose between speaker, earpiece, Bluetooth, or wired headphones with a clean, type-safe interface. List available devices, track the current output, and listen for changes. This replaces the previous boolean-based speaker routing API.
+**Echo v1.3.0** brings a major architecture refactor for better memory management and simpler event handling:
+
+- **New Event System**: Events are now observation-only via `echo.events` AsyncStream - no more `when()` handlers
+- **Eliminated Memory Leaks**: No more orphaned Tasks from internal event listeners
+- **Delegate-Based Internal Coordination**: Components use direct method calls instead of event chains
+- **ToolExecutor**: Centralized tool execution with support for custom handlers
+
+This is a **breaking change** - see the [Migration Guide](CHANGELOG.md) for details.
 
 [View changelog →](CHANGELOG.md)
 
@@ -30,7 +37,7 @@ Add Echo to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/davidgeere/swift-echo.git", from: "1.2.0")
+    .package(url: "https://github.com/davidgeere/swift-echo.git", from: "1.3.0")
 ]
 ```
 
@@ -93,10 +100,12 @@ try await conversation.setAudioOutput(device: .bluetooth)       // Allow Bluetoo
 try await conversation.setAudioOutput(device: .wiredHeadphones) // Allow wired headphones
 try await conversation.setAudioOutput(device: .systemDefault)    // Let system choose
 
-// Listen for audio output changes
-echo.when(.audioOutputChanged) { event in
-    if case .audioOutputChanged(let device) = event {
-        print("Audio output changed to: \(device.description)")
+// Listen for audio output changes via events stream
+Task {
+    for await event in echo.events {
+        if case .audioOutputChanged(let device) = event {
+            print("Audio output changed to: \(device.description)")
+        }
     }
 }
 
@@ -278,103 +287,67 @@ try await conversation.send("What's the weather in San Francisco?")
 
 ## 📊 Event System
 
-Monitor all events with the intuitive `when` syntax:
-
-### Single Event Listeners
-
-```swift
-// Listen for specific events
-echo.when(.messageFinalized) { event in
-    if case .messageFinalized(let message) = event {
-        print("New message: \(message.text)")
-    }
-}
-
-echo.when(.userStartedSpeaking) { _ in
-    print("🎙️ User is speaking...")
-}
-
-echo.when(.assistantStartedSpeaking) { _ in
-    print("🤖 Assistant is responding...")
-}
-
-echo.when(.userTranscriptionCompleted) { event in
-    if case .userTranscriptionCompleted(let transcript) = event {
-        print("User said: \(transcript)")
-    }
-}
-
-echo.when(.audioOutputChanged) { event in
-    if case .audioOutputChanged(let device) = event {
-        print("Audio output changed to: \(device.description)")
-    }
-}
-```
-
-### Multiple Event Listeners
-
-Listen to multiple events with a single handler:
-
-```swift
-// Array syntax
-echo.when([.userStartedSpeaking, .assistantStartedSpeaking]) { event in
-    switch event {
-    case .userStartedSpeaking:
-        print("🎙️ User is speaking...")
-    case .assistantStartedSpeaking:
-        print("🤖 Assistant is responding...")
-    default:
-        break
-    }
-}
-
-// Variadic syntax (equivalent)
-echo.when(.userStartedSpeaking, .assistantStartedSpeaking) { event in
-    // Same handler for both events
-}
-```
-
-### All Events Handler
-
-Listen to every event emitted by Echo:
-
-```swift
-// Non-async handler (fire-and-forget)
-echo.when { event in
-    print("Event received: \(event)")
-    // Useful for logging, analytics, or global monitoring
-}
-
-// Async handler (returns handler IDs for removal)
-let handlerIds = await echo.when { event in
-    // Process all events
-    if case .messageFinalized(let message) = event {
-        print("New message: \(message.text)")
-    }
-}
-```
+Observe all events via the `events` AsyncStream:
 
 ### Events Stream
 
-Process events sequentially with async streams:
-
 ```swift
-// Process events one at a time
+// Observe events via async stream
 Task {
     for await event in echo.events {
         switch event {
-        case .audioStarting:
-            print("Audio system starting...")
-        case .audioStarted:
-            print("Audio ready!")
-        case .audioStopped:
-            print("Audio stopped")
-            break // Exit loop when done
         case .messageFinalized(let message):
-            print("Message: \(message.text)")
+            print("New message: \(message.text)")
+            
+        case .userStartedSpeaking:
+            print("🎙️ User is speaking...")
+            
+        case .assistantStartedSpeaking:
+            print("🤖 Assistant is responding...")
+            
+        case .userTranscriptionCompleted(let transcript, _):
+            print("User said: \(transcript)")
+            
+        case .audioOutputChanged(let device):
+            print("Audio output changed to: \(device.description)")
+            
+        case .error(let error):
+            print("Error: \(error)")
+            
         default:
             break
         }
+    }
+}
+```
+
+### Multiple Observers
+
+Create multiple Tasks to handle events in different ways:
+
+```swift
+// UI updates on MainActor
+Task { @MainActor in
+    for await event in echo.events {
+        switch event {
+        case .userStartedSpeaking:
+            updateMicrophoneIndicator(active: true)
+        case .userStoppedSpeaking:
+            updateMicrophoneIndicator(active: false)
+        case .assistantStartedSpeaking:
+            showAssistantSpeaking()
+        case .assistantStoppedSpeaking:
+            hideAssistantSpeaking()
+        default:
+            break
+        }
+    }
+}
+
+// Logging in background
+Task.detached(priority: .utility) {
+    for await event in echo.events {
+        Logger.log(event)
     }
 }
 ```
@@ -384,19 +357,43 @@ Task {
 Track audio system startup and shutdown:
 
 ```swift
-echo.when(.audioStarting) { _ in
-    print("Connecting audio...")
-    // Show "Connecting..." UI state
+Task {
+    for await event in echo.events {
+        switch event {
+        case .audioStarting:
+            print("Connecting audio...")
+            // Show "Connecting..." UI state
+            
+        case .audioStarted:
+            print("Ready to speak!")
+            // Show "Ready" UI state
+            
+        case .audioStopped:
+            print("Audio disconnected")
+            // Show "Disconnected" UI state
+            
+        default:
+            break
+        }
+    }
 }
+```
 
-echo.when(.audioStarted) { _ in
-    print("Ready to speak!")
-    // Show "Ready" UI state
-}
+### Filtering Events
 
-echo.when(.audioStopped) { _ in
-    print("Audio disconnected")
-    // Show "Disconnected" UI state
+Use Swift's pattern matching for selective handling:
+
+```swift
+Task {
+    // Only handle audio-related events
+    for await event in echo.events {
+        switch event {
+        case .audioStarted, .audioStopped, .audioLevelChanged:
+            handleAudioEvent(event)
+        default:
+            break
+        }
+    }
 }
 ```
 
