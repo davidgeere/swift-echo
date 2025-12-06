@@ -205,6 +205,29 @@ struct FrequencyAnalysisTests {
         #expect(result.level >= 0 && result.level <= 1)
     }
     
+    @Test
+    func frequencyAnalyzerHandlesVeryLowSampleRate() {
+        let analyzer = FrequencyAnalyzer()
+        
+        // Very low sample rate that would cause overlapping frequency bins
+        // At 2000 Hz, bin width = 2000/2048 ≈ 0.98 Hz
+        // lowMaxBin = 250/0.98 ≈ 255
+        // midMaxBin = 4000/0.98 ≈ 4081 (exceeds fftSize/2 = 1024)
+        var samples = [Float](repeating: 0, count: 2048)
+        for i in 0..<samples.count {
+            samples[i] = sin(Float(i) * 0.1)
+        }
+        
+        let result = analyzer.analyze(samples: samples, sampleRate: 2000)
+        
+        // Should return zeros for frequency bands when sample rate is too low
+        #expect(result.low == 0)
+        #expect(result.mid == 0)
+        #expect(result.high == 0)
+        // But overall level should still be calculated from RMS
+        #expect(result.level > 0)
+    }
+    
     // MARK: - Integration Tests
     
     @Test
