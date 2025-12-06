@@ -2,6 +2,7 @@
 // Echo Tests - Mocks
 // Mock audio playback for headless testing without speaker hardware
 
+import AVFoundation
 import Foundation
 @testable import Echo
 
@@ -60,5 +61,10 @@ public actor MockAudioPlayback: AudioPlaybackProtocol {
     
     public var isActive: Bool {
         return isRunning
+    }
+    
+    /// Mock does not use a real AVAudioEngine
+    public var audioEngine: AVAudioEngine? {
+        return nil
     }
 }
