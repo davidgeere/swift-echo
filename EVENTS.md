@@ -7,6 +7,7 @@ Complete guide to all events emitted by Echo and how to leverage them using the 
 - [User Speech Events](#user-speech-events)
 - [Assistant Response Events](#assistant-response-events)
 - [Audio Events](#audio-events)
+  - [Audio Level Events](#audio-level-events)
   - [Audio Output Events](#audio-output-events)
 - [Turn Events](#turn-events)
 - [Tool Events](#tool-events)
@@ -18,81 +19,62 @@ Complete guide to all events emitted by Echo and how to leverage them using the 
 
 ## Event Handler Syntax
 
-Echo provides flexible ways to handle events:
+Echo uses an AsyncStream-based event observation pattern:
 
-### Single Event Handler
-
-#### Synchronous Handler
-```swift
-echo.when(.eventType) { event in
-    // Handle event synchronously
-    // Access event values using pattern matching
-}
-```
-
-#### Asynchronous Handler
-```swift
-echo.when(.eventType) { event in
-    // Handle event asynchronously
-    // Can perform async operations
-    await someAsyncOperation()
-}
-```
-
-### Multiple Events Handler
-
-Listen to multiple events with a single handler using variadic parameters:
+### Basic Event Handling
 
 ```swift
-// Listen for multiple events with one handler (variadic syntax - recommended)
-echo.when(.userStartedSpeaking, .assistantStartedSpeaking) { event in
-    switch event {
-    case .userStartedSpeaking:
-        print("User started speaking")
-    case .assistantStartedSpeaking:
-        print("Assistant started speaking")
-    default:
-        break
+Task {
+    for await event in echo.events {
+        switch event {
+        case .userStartedSpeaking:
+            print("User started speaking")
+        case .assistantStartedSpeaking:
+            print("Assistant started speaking")
+        case .inputLevelsChanged(let levels):
+            print("Input levels: \(levels.level)")
+        case .error(let error):
+            print("Error: \(error)")
+        default:
+            break
+        }
     }
 }
 ```
 
-**Variadic Syntax (Recommended):**
-```swift
-echo.when(.eventTypeA, .eventTypeB, .eventTypeC) { event in
-    // Handle any of the specified events
-    // Use pattern matching to determine which event occurred
-}
-```
+### Multiple Observers
 
-**Array Syntax (Also Supported):**
-```swift
-echo.when([.eventTypeA, .eventTypeB, .eventTypeC]) { event in
-    // Handle any of the specified events
-    // Use pattern matching to determine which event occurred
-}
-```
-
-Both syntaxes are equivalent. The variadic syntax is more concise and Swift-idiomatic.
-
-This is equivalent to registering the same handler multiple times, but more concise:
+Create multiple Tasks to handle events in different ways:
 
 ```swift
-// Equivalent to:
-echo.when(.userStartedSpeaking) { event in
-    // handler code
+// UI updates on MainActor
+Task { @MainActor in
+    for await event in echo.events {
+        switch event {
+        case .userStartedSpeaking:
+            updateMicrophoneIndicator(active: true)
+        case .userStoppedSpeaking:
+            updateMicrophoneIndicator(active: false)
+        default:
+            break
+        }
+    }
 }
-echo.when(.assistantStartedSpeaking) { event in
-    // same handler code
+
+// Logging in background
+Task.detached(priority: .utility) {
+    for await event in echo.events {
+        Logger.log(event)
+    }
 }
 ```
 
 **Benefits:**
-- Cleaner code when handling multiple events the same way
-- Single handler definition instead of duplicating code
-- Easier to maintain and update
-- Reduces code duplication
-- More readable with variadic syntax
+- Clean AsyncStream-based observation
+- Multiple observers can subscribe
+- No handler registration/cleanup needed
+- Pattern matching for type-safe event handling
+- Async/await friendly
 
 ---
 
@@ -317,29 +299,96 @@ echo.when(.assistantAudioDelta) { event in
 
 ## Audio Events
 
-### `.audioLevelChanged`
+### `.inputLevelsChanged`
 
-**When:** Audio input level has changed (useful for visualizations).
+**When:** Input audio levels have changed (for visualizations with frequency analysis).
 
 **Event Value:**
-- `level: Double` - Audio level from 0.0 (silent) to 1.0 (loudest)
+- `levels: AudioLevels` - Audio levels with overall amplitude and frequency bands
 
-**Use Case:** Visualize microphone input level, show audio waveform, provide audio feedback.
+**AudioLevels Properties:**
+- `level: Float` - Overall RMS amplitude (0.0-1.0)
+- `low: Float` - Low frequency band energy, 20-250 Hz (bass, rumble)
+- `mid: Float` - Mid frequency band energy, 250-4000 Hz (voice, melody)
+- `high: Float` - High frequency band energy, 4000-20000 Hz (sibilance, air)
+
+**Use Case:** Visualize microphone input level with frequency bands, show audio spectrum, create audio visualizers.
 
 ```swift
-echo.when(.audioLevelChanged) { event in
-    guard case .audioLevelChanged(let level) = event else { return }
-    
-    // Update audio level visualization
-    let percentage = Int(level * 100)
-    print("Audio level: \(percentage)%")
-    
-    // Update UI bar/indicator
-    // Animate waveform visualization
+Task {
+    for await event in echo.events {
+        guard case .inputLevelsChanged(let levels) = event else { continue }
+        
+        // Update audio level visualization
+        print("Input - Level: \(levels.level), Low: \(levels.low), Mid: \(levels.mid), High: \(levels.high)")
+        
+        // Update UI bar/indicator for each frequency band
+        // Animate spectrum visualization
+    }
 }
 ```
 
 **Note:** This event fires frequently during audio input. Consider throttling UI updates.
+
+---
+
+### `.outputLevelsChanged`
+
+**When:** Output audio levels have changed (for visualizations with frequency analysis).
+
+**Event Value:**
+- `levels: AudioLevels` - Audio levels with overall amplitude and frequency bands
+
+**AudioLevels Properties:**
+- `level: Float` - Overall RMS amplitude (0.0-1.0)
+- `low: Float` - Low frequency band energy, 20-250 Hz (bass, rumble)
+- `mid: Float` - Mid frequency band energy, 250-4000 Hz (voice, melody)
+- `high: Float` - High frequency band energy, 4000-20000 Hz (sibilance, air)
+
+**Use Case:** Visualize speaker output level with frequency bands, show what the assistant is saying, create response visualizers.
+
+```swift
+Task {
+    for await event in echo.events {
+        guard case .outputLevelsChanged(let levels) = event else { continue }
+        
+        // Update output audio visualization
+        print("Output - Level: \(levels.level), Low: \(levels.low), Mid: \(levels.mid), High: \(levels.high)")
+        
+        // Update UI bar/indicator for speaker output
+        // Animate output waveform
+    }
+}
+```
+
+**Note:** This event fires frequently during audio output. Consider throttling UI updates.
+
+---
+
+### `.audioLevelChanged` (Deprecated)
+
+> ⚠️ **Deprecated:** Use `.inputLevelsChanged` instead for richer frequency band data.
+
+**When:** Audio input level has changed (useful for simple visualizations).
+
+**Event Value:**
+- `level: Double` - Audio level from 0.0 (silent) to 1.0 (loudest)
+
+**Use Case:** Simple microphone input level visualization without frequency bands.
+
+```swift
+Task {
+    for await event in echo.events {
+        guard case .audioLevelChanged(let level) = event else { continue }
+        
+        // Update audio level visualization
+        let percentage = Int(level * 100)
+        print("Audio level: \(percentage)%")
+    }
+}
+```
+
+**Migration:** Switch to `.inputLevelsChanged(let levels)` and use `levels.level` for the overall amplitude.
 
 ---
 
@@ -1109,7 +1158,7 @@ Echo provides a comprehensive event system covering:
 
 - **User Speech**: 4 events for tracking user input
 - **Assistant Response**: 6 events for tracking assistant output
-- **Audio**: 2 events for audio level and status
+- **Audio**: 7 events for audio levels (input/output with frequency bands), status, lifecycle, and output device
 - **Turn Management**: 3 events for conversation flow
 - **Tools**: 2 events for function calling
 - **Messages**: 1 event for finalized messages
@@ -1118,5 +1167,5 @@ Echo provides a comprehensive event system covering:
 - **Embeddings**: 2 events for embedding operations
 - **Errors**: 1 event for error handling
 
-All events can be handled using `echo.when(.eventType) { event in ... }` with pattern matching to extract associated values.
+All events can be observed using `for await event in echo.events { ... }` with pattern matching to extract associated values.
 

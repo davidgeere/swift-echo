@@ -4,19 +4,19 @@ A unified Swift library for OpenAI's Realtime API (WebSocket-based voice) and Ch
 
 [![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
 [![Platform](https://img.shields.io/badge/platform-iOS%2018%20|%20macOS%2014-blue.svg)](https://developer.apple.com)
-[![Version](https://img.shields.io/badge/version-1.3.0-brightgreen.svg)](https://github.com/davidgeere/swift-echo/releases)
+[![Version](https://img.shields.io/badge/version-1.5.0-brightgreen.svg)](https://github.com/davidgeere/swift-echo/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 ## 🚀 Latest Updates
 
-**Echo v1.3.0** brings a major architecture refactor for better memory management and simpler event handling:
+**Echo v1.5.0** adds FFT-based audio frequency analysis with real-time level monitoring:
 
-- **New Event System**: Events are now observation-only via `echo.events` AsyncStream - no more `when()` handlers
-- **Eliminated Memory Leaks**: No more orphaned Tasks from internal event listeners
-- **Delegate-Based Internal Coordination**: Components use direct method calls instead of event chains
-- **ToolExecutor**: Centralized tool execution with support for custom handlers
+- **Audio Frequency Analysis**: Get low/mid/high frequency bands using Accelerate framework FFT
+- **Input Level Monitoring**: Observable `inputLevels` property with frequency bands for microphone
+- **Output Level Monitoring**: Observable `outputLevels` property with frequency bands for speaker
+- **New Events**: `inputLevelsChanged` and `outputLevelsChanged` events for visualizations
 
-This is a **breaking change** - see the [Migration Guide](CHANGELOG.md) for details.
+**Echo v1.4.0** exposed `AVAudioEngine` for external audio monitoring and custom tap installation.
 
 [View changelog →](CHANGELOG.md)
 
@@ -24,12 +24,13 @@ This is a **breaking change** - see the [Migration Guide](CHANGELOG.md) for deta
 
 - 🎙️ **Voice Conversations** - Real-time voice chat using OpenAI's Realtime API
 - 💬 **Text Chat** - Traditional text-based conversations with streaming support  
+- 📊 **Audio Level Monitoring** - Real-time frequency analysis with low/mid/high bands
 - 🧮 **Embeddings API** - Generate text embeddings for semantic search and similarity
 - 📋 **Structured Output** - Type-safe JSON generation with Codable schemas
 - 🔄 **Seamless Mode Switching** - Switch between voice and text mid-conversation
 - 🎯 **Conversational API** - Beautiful, discoverable API design
 - 🛠️ **Tool Calling** - Function calling with MCP server support
-- 📊 **Event-Driven** - Comprehensive event system for all interactions
+- 📈 **Event-Driven** - Comprehensive event system for all interactions
 
 ## 🚀 Installation
 
@@ -37,7 +38,7 @@ Add Echo to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/davidgeere/swift-echo.git", from: "1.3.0")
+    .package(url: "https://github.com/davidgeere/swift-echo.git", from: "1.5.0")
 ]
 ```
 
@@ -113,6 +114,59 @@ Task {
 conversation.setMuted(true)   // Mute microphone
 conversation.setMuted(false)  // Unmute microphone
 ```
+
+### 📊 Audio Level Monitoring
+
+Monitor audio input and output levels with frequency band analysis:
+
+```swift
+// Observable properties update automatically in SwiftUI views
+struct AudioVisualizerView: View {
+    let conversation: Conversation
+    
+    var body: some View {
+        VStack {
+            // Input (microphone) levels
+            Text("Input: \(conversation.inputLevels.level, specifier: "%.2f")")
+            HStack {
+                Text("Low: \(conversation.inputLevels.low, specifier: "%.2f")")
+                Text("Mid: \(conversation.inputLevels.mid, specifier: "%.2f")")
+                Text("High: \(conversation.inputLevels.high, specifier: "%.2f")")
+            }
+            
+            // Output (speaker) levels
+            Text("Output: \(conversation.outputLevels.level, specifier: "%.2f")")
+            HStack {
+                Text("Low: \(conversation.outputLevels.low, specifier: "%.2f")")
+                Text("Mid: \(conversation.outputLevels.mid, specifier: "%.2f")")
+                Text("High: \(conversation.outputLevels.high, specifier: "%.2f")")
+            }
+        }
+    }
+}
+
+// Or use events for more control
+Task {
+    for await event in echo.events {
+        switch event {
+        case .inputLevelsChanged(let levels):
+            // Update input visualizer
+            print("Input - Level: \(levels.level), Low: \(levels.low), Mid: \(levels.mid), High: \(levels.high)")
+        case .outputLevelsChanged(let levels):
+            // Update output visualizer
+            print("Output - Level: \(levels.level)")
+        default:
+            break
+        }
+    }
+}
+```
+
+**AudioLevels Properties:**
+- `level` - Overall RMS amplitude (0.0-1.0)
+- `low` - Low frequency band energy, 20-250 Hz (bass, rumble)
+- `mid` - Mid frequency band energy, 250-4000 Hz (voice, melody)
+- `high` - High frequency band energy, 4000-20000 Hz (sibilance, air)
 
 ## 🧮 Embeddings API
 
@@ -388,7 +442,7 @@ Task {
     // Only handle audio-related events
     for await event in echo.events {
         switch event {
-        case .audioStarted, .audioStopped, .audioLevelChanged:
+        case .audioStarted, .audioStopped, .inputLevelsChanged, .outputLevelsChanged:
             handleAudioEvent(event)
         default:
             break

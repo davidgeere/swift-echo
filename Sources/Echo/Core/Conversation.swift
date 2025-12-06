@@ -912,13 +912,13 @@ public class Conversation: RealtimeClientDelegate {
 
     /// Disconnects and cleans up resources
     public func disconnect() async {
+        // Cancel audio level observation
+        audioLevelObservationTask?.cancel()
+        audioLevelObservationTask = nil
+        
         await realtimeClient?.disconnect()
         realtimeClient = nil
         responsesClient = nil
         turnManager = nil
-    }
-    
-    deinit {
-        audioLevelObservationTask?.cancel()
     }
 }
