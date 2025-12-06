@@ -11,7 +11,7 @@ import Foundation
 /// Echo library version information
 public enum EchoVersion {
     /// Current version of the Echo library
-    public static let current = Version(major: 1, minor: 3, patch: 0)
+    public static let current = Version(major: 1, minor: 4, patch: 0)
     
     /// Version string (e.g., "1.0.0")
     public static var string: String {
@@ -25,7 +25,7 @@ public enum EchoVersion {
     
     /// Build information
     public static let build = BuildInfo(
-        date: "2025-11-29",
+        date: "2025-12-06",
         commit: "main"
     )
 }
@@ -81,6 +81,35 @@ public struct BuildInfo: Sendable {
 extension EchoVersion {
     /// Version history with release notes
     public static let history: [(version: Version, date: String, notes: String)] = [
+        (
+            version: Version(major: 1, minor: 4, patch: 0),
+            date: "2025-12-06",
+            notes: """
+            🔊 Audio Engine Exposure for External Monitoring
+            
+            New Features:
+            • Exposed AVAudioEngine from AudioPlayback for external audio monitoring
+            • Added audioEngine property to AudioPlaybackProtocol
+            • Added installAudioTap() method to Conversation and RealtimeClient
+            • Added removeAudioTap() method for cleanup
+            • Enables audio visualizations, level metering, and frequency analysis
+            
+            API:
+            • AudioPlayback.audioEngine - Direct access to the underlying AVAudioEngine
+            • Conversation.installAudioTap() - Safe tap installation without Sendable issues
+            • Conversation.removeAudioTap() - Clean removal of installed taps
+            
+            Technical:
+            • Uses closure-based API to safely cross actor boundaries
+            • AVAudioEngine is not Sendable, so direct property access is limited
+            • @preconcurrency import for AVFoundation to handle Swift 6 concurrency
+            
+            Testing:
+            • New AudioEngineExposureTests with 7 tests
+            • Tests for engine lifecycle (start/stop/nil states)
+            • Tests for tap installation on mainMixerNode
+            """
+        ),
         (
             version: Version(major: 1, minor: 3, patch: 0),
             date: "2025-11-29",

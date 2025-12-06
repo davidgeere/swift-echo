@@ -5,6 +5,46 @@ All notable changes to Echo will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2025-12-06
+
+### Added
+
+#### Audio Engine Exposure for External Monitoring
+- **AVAudioEngine access** - Exposed the internal audio engine for external audio monitoring
+  - `AudioPlayback.audioEngine` - Direct access to the underlying AVAudioEngine (read-only)
+  - Enables audio visualizations, level metering, and frequency analysis
+  - Property is nil when playback is not active
+
+- **Audio tap installation API** - Safe methods for installing audio taps
+  - `conversation.installAudioTap(bufferSize:format:handler:)` - Install a tap on the main mixer node
+  - `conversation.removeAudioTap()` - Remove an installed tap
+  - Handles Swift 6 concurrency safely (AVAudioEngine is not Sendable)
+
+#### Example Usage
+```swift
+// Install a tap for audio analysis
+try await conversation.installAudioTap(bufferSize: 1024) { buffer, time in
+    // Process audio buffer for visualization
+    let channelData = buffer.floatChannelData?[0]
+    let frameLength = Int(buffer.frameLength)
+    // Analyze audio data...
+}
+
+// Remove tap when done
+await conversation.removeAudioTap()
+```
+
+#### Protocol Update
+- Added `audioEngine: AVAudioEngine? { get }` to `AudioPlaybackProtocol`
+- Updated `MockAudioPlayback` to return nil for audioEngine (no real engine in tests)
+
+### Technical
+- Used `@preconcurrency import AVFoundation` to handle Swift 6 strict concurrency
+- Closure-based API for Conversation/RealtimeClient to avoid Sendable constraints
+- New `AudioEngineExposureTests.swift` with 7 comprehensive tests
+
+---
+
 ## [1.3.0] - 2025-11-29
 
 ### Breaking Changes
@@ -440,6 +480,9 @@ Echo is a unified Swift library for OpenAI's Realtime API (WebSocket-based voice
 
 ## Version History
 
+- **1.4.0** - Audio engine exposure for external monitoring (Issue #8)
+- **1.3.0** - Architecture refactor: Event decoupling
+- **1.2.2** - Audio routing fixes
 - **1.2.1** - Fixed capture/playback engine restart after audio output change
 - **1.2.0** - Audio output device selection API (breaking changes)
 - **1.1.2** - Fixed speaker routing and added state tracking
@@ -456,6 +499,7 @@ This project follows [Semantic Versioning](https://semver.org/):
 - **MINOR** version for backwards-compatible functionality additions
 - **PATCH** version for backwards-compatible bug fixes
 
+[1.4.0]: https://github.com/davidgeere/swift-echo/releases/tag/v1.4.0
 [1.3.0]: https://github.com/davidgeere/swift-echo/releases/tag/v1.3.0
 [1.2.2]: https://github.com/davidgeere/swift-echo/releases/tag/v1.2.2
 [1.2.1]: https://github.com/davidgeere/swift-echo/releases/tag/v1.2.1

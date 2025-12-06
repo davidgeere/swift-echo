@@ -2,10 +2,8 @@
 // Echo - Realtime API
 // Main WebSocket client for the Realtime API with MANDATORY model validation
 
+@preconcurrency import AVFoundation
 import Foundation
-#if os(iOS)
-import AVFoundation
-#endif
 
 /// Main client for interacting with the Realtime API via WebSocket
 public actor RealtimeClient: TurnManagerDelegate {
@@ -411,6 +409,47 @@ public actor RealtimeClient: TurnManagerDelegate {
         get async {
             return await audioPlayback?.currentAudioOutput ?? .systemDefault
         }
+    }
+    
+    /// Installs an audio tap on the playback engine's main mixer node for external monitoring
+    /// - Parameters:
+    ///   - bufferSize: The buffer size for the tap (default: 1024)
+    ///   - format: The audio format for the tap (nil uses the output format)
+    ///   - handler: The closure called with audio buffer data
+    /// - Throws: RealtimeError if audio playback is not active
+    public func installAudioTap(
+        bufferSize: UInt32 = 1024,
+        format: AVAudioFormat? = nil,
+        handler: @escaping @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void
+    ) async throws {
+        guard let playback = audioPlayback else {
+            throw RealtimeError.audioPlaybackFailed(
+                NSError(domain: "RealtimeClient", code: -3, userInfo: [
+                    NSLocalizedDescriptionKey: "Audio playback is not active"
+                ])
+            )
+        }
+        
+        guard let engine = await playback.audioEngine else {
+            throw RealtimeError.audioPlaybackFailed(
+                NSError(domain: "RealtimeClient", code: -4, userInfo: [
+                    NSLocalizedDescriptionKey: "Audio engine is not available"
+                ])
+            )
+        }
+        
+        let mixer = engine.mainMixerNode
+        let tapFormat = format ?? mixer.outputFormat(forBus: 0)
+        mixer.installTap(onBus: 0, bufferSize: bufferSize, format: tapFormat, block: handler)
+    }
+    
+    /// Removes the audio tap from the playback engine's main mixer node
+    public func removeAudioTap() async {
+        guard let playback = audioPlayback,
+              let engine = await playback.audioEngine else {
+            return
+        }
+        engine.mainMixerNode.removeTap(onBus: 0)
     }
 
     /// Send a text message to the Realtime API

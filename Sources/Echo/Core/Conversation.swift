@@ -2,6 +2,7 @@
 // Echo - Core  
 // Manages a single conversation with mode switching support
 
+@preconcurrency import AVFoundation
 @preconcurrency import Foundation
 import Observation
 
@@ -762,6 +763,33 @@ public class Conversation: RealtimeClientDelegate {
             }
             return await client.currentAudioOutput
         }
+    }
+    
+    /// Installs an audio tap on the playback engine's main mixer node for external monitoring
+    /// - Parameters:
+    ///   - bufferSize: The buffer size for the tap (default: 1024)
+    ///   - format: The audio format for the tap (nil uses the output format)
+    ///   - handler: The closure called with audio buffer data
+    /// - Note: This method safely installs a tap without exposing the AVAudioEngine directly,
+    ///         avoiding Sendable constraints in Swift 6 strict concurrency.
+    /// - Warning: Only one tap can be installed at a time. Call `removeAudioTap()` before installing a new one.
+    public func installAudioTap(
+        bufferSize: UInt32 = 1024,
+        format: AVAudioFormat? = nil,
+        handler: @escaping @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void
+    ) async throws {
+        guard mode == .audio, let client = realtimeClient else {
+            throw EchoError.invalidMode("Cannot install audio tap when not in audio mode")
+        }
+        try await client.installAudioTap(bufferSize: bufferSize, format: format, handler: handler)
+    }
+    
+    /// Removes the audio tap from the playback engine's main mixer node
+    public func removeAudioTap() async {
+        guard mode == .audio, let client = realtimeClient else {
+            return
+        }
+        await client.removeAudioTap()
     }
 
     /// Manually ends the user's turn (for manual turn mode)

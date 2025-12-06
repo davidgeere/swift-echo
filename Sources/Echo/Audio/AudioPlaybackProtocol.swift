@@ -2,6 +2,7 @@
 // Echo - Audio
 // Protocol for audio playback to enable testing without hardware
 
+import AVFoundation
 import Foundation
 
 /// Protocol for audio playback implementations
@@ -33,4 +34,7 @@ public protocol AudioPlaybackProtocol: Actor {
     
     /// Whether playback is currently active
     var isActive: Bool { get }
+    
+    /// The underlying AVAudioEngine (for external audio monitoring)
+    var audioEngine: AVAudioEngine? { get }
 }
