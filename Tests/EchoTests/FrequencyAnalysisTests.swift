@@ -212,8 +212,9 @@ struct FrequencyAnalysisTests {
         // Test with extremely low sample rate where frequency bands would overlap
         // At 1000 Hz sample rate with FFT size 2048:
         // bin width = 1000/2048 ≈ 0.49 Hz
-        // lowMaxBin (250 Hz) ≈ 512, midMaxBin (4000 Hz) would be > nyquist (500 Hz)
-        // This should trigger the validation guard and return zeros for frequency bands
+        // lowMaxBin (250 Hz) ≈ 510, midMaxBin (4000 Hz) ≈ 8163
+        // Since midMaxBin far exceeds highMaxBin (1024), the validation guard triggers
+        // This should return zeros for frequency bands
         var samples = [Float](repeating: 0, count: 2048)
         for i in 0..<samples.count {
             samples[i] = sin(Float(i) * 0.05)
