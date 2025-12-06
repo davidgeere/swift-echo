@@ -10,8 +10,37 @@ import AVFoundation
 /// Uses Apple's Accelerate framework (vDSP) for high-performance FFT processing.
 /// Analyzes audio into three frequency bands: low, mid, and high.
 ///
-/// - Note: This class uses `@unchecked Sendable` because `FFTSetup` is an opaque pointer
-///   that is safe to use across threads when the instance is not mutated after initialization.
+/// ## Thread Safety
+///
+/// This class is marked as `@unchecked Sendable` and is safe to use from multiple threads
+/// concurrently. The thread-safety guarantees are as follows:
+///
+/// 1. **FFTSetup Thread Safety**: The `FFTSetup` object is an immutable opaque pointer to
+///    FFT configuration data created by `vDSP_create_fftsetup()`. Once initialized, it is
+///    never mutated and can be safely shared across threads. Apple's vDSP documentation
+///    confirms that FFTSetup objects are thread-safe for concurrent read access.
+///
+/// 2. **vDSP Function Reentrancy**: All vDSP functions used in this class (`vDSP_fft_zrip`,
+///    `vDSP_rmsqv`, `vDSP_zvmags`, etc.) are reentrant and thread-safe. They operate only
+///    on the buffers passed as arguments and maintain no internal state between calls.
+///
+/// 3. **Local Buffer Isolation**: Each call to `analyze(samples:sampleRate:)` allocates
+///    its own local buffers (`windowedData`, `realPart`, `imagPart`, `magnitudes`). These
+///    buffers are stack-allocated or heap-allocated within the function scope and are not
+///    shared between concurrent invocations.
+///
+/// 4. **Concurrent Audio Thread Usage**: This analyzer is designed to be called from
+///    multiple audio processing threads simultaneously (e.g., input tap and output tap
+///    in AVAudioEngine). Each audio thread operates on its own buffer data, and the
+///    shared FFTSetup is safely accessed by all threads without synchronization.
+///
+/// ## Performance Considerations
+///
+/// - No locks or synchronization primitives are needed, ensuring minimal overhead in
+///   real-time audio processing contexts.
+/// - Each FFT operation allocates temporary buffers. For optimal performance in
+///   tight loops, consider reusing analyzer instances rather than creating new ones.
+///
 final class FrequencyAnalyzer: @unchecked Sendable {
     /// FFT size - must be power of 2. 2048 provides good frequency resolution
     private let fftSize: Int = 2048
@@ -43,6 +72,12 @@ final class FrequencyAnalyzer: @unchecked Sendable {
     }
     
     /// Analyzes audio samples and returns frequency band levels
+    ///
+    /// This method is thread-safe and can be called concurrently from multiple audio
+    /// processing threads (e.g., AVAudioEngine input and output taps). Each invocation
+    /// operates on independent local buffers, and the shared FFTSetup is safely accessed
+    /// without synchronization.
+    ///
     /// - Parameters:
     ///   - samples: Array of audio samples to analyze
     ///   - sampleRate: The sample rate of the audio (e.g., 44100, 48000)
