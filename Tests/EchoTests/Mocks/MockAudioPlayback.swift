@@ -21,7 +21,10 @@ public actor MockAudioPlayback: AudioPlaybackProtocol {
         audioLevelStream = AsyncStream { cont in
             continuation = cont
         }
-        levelContinuation = continuation!
+        guard let levelCont = continuation else {
+            preconditionFailure("Failed to initialize audio level stream continuation")
+        }
+        levelContinuation = levelCont
     }
     
     public func start() async throws {
