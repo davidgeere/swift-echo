@@ -209,10 +209,10 @@ struct FrequencyAnalysisTests {
     func frequencyAnalyzerHandlesVeryLowSampleRate() {
         let analyzer = FrequencyAnalyzer()
         
-        // Very low sample rate that would cause overlapping frequency bins
+        // Very low sample rate where frequency bands exceed valid bin range
         // At 2000 Hz sample rate, Nyquist frequency = 1000 Hz (sampleRate/2)
         // midMaxFrequency = 4000 Hz exceeds Nyquist, causing midMaxBin to exceed highMaxBin
-        // This violates the guard condition (midMaxBin < highMaxBin)
+        // (midMaxBin ≈ 4096 > highMaxBin = 1024), violating guard condition
         var samples = [Float](repeating: 0, count: 2048)
         for i in 0..<samples.count {
             samples[i] = sin(Float(i) * 0.1)
