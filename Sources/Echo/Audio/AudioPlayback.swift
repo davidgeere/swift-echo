@@ -13,7 +13,8 @@ import UIKit
 public actor AudioPlayback: AudioPlaybackProtocol {
     // MARK: - Properties
 
-    private var audioEngine: AVAudioEngine?
+    /// The underlying AVAudioEngine (for external audio monitoring)
+    public private(set) var audioEngine: AVAudioEngine?
     private var playerNode: AVAudioPlayerNode?
     private let format: AudioFormat
     private let processor: AudioProcessor
