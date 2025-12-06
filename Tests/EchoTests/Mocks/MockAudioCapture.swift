@@ -19,7 +19,10 @@ public actor MockAudioCapture: AudioCaptureProtocol {
         audioLevelStream = AsyncStream { cont in
             continuation = cont
         }
-        levelContinuation = continuation!
+        guard let cont = continuation else {
+            preconditionFailure("Failed to initialize audio level stream continuation")
+        }
+        levelContinuation = cont
     }
     
     public func start(onAudioChunk: @escaping @Sendable (String) async -> Void) async throws {
