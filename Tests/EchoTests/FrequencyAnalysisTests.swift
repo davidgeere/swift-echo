@@ -205,6 +205,29 @@ struct FrequencyAnalysisTests {
         #expect(result.level >= 0 && result.level <= 1)
     }
     
+    @Test
+    func frequencyAnalyzerHandlesVeryLowSampleRate() {
+        let analyzer = FrequencyAnalyzer()
+        
+        // Very low sample rate where frequency bands exceed valid bin range
+        // At 2000 Hz sample rate, Nyquist frequency = 1000 Hz (sampleRate/2)
+        // midMaxFrequency = 4000 Hz exceeds Nyquist, causing midMaxBin to exceed highMaxBin
+        // (midMaxBin ≈ 4096 > highMaxBin = 1024), violating guard condition
+        var samples = [Float](repeating: 0, count: 2048)
+        for i in 0..<samples.count {
+            samples[i] = sin(Float(i) * 0.1)
+        }
+        
+        let result = analyzer.analyze(samples: samples, sampleRate: 2000)
+        
+        // Should return zeros for frequency bands when sample rate is too low
+        #expect(result.low == 0)
+        #expect(result.mid == 0)
+        #expect(result.high == 0)
+        // But overall level should still be calculated from RMS
+        #expect(result.level > 0)
+    }
+    
     // MARK: - Integration Tests
     
     @Test
