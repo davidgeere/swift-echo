@@ -27,13 +27,14 @@ final class FrequencyAnalyzer: @unchecked Sendable {
     private let midMaxFrequency: Float = 4000
     
     /// Initializes the frequency analyzer with FFT setup
-    init() throws {
+    ///
+    /// - Note: FFT setup failure is a system-level error that should not occur
+    ///         under normal circumstances. If it fails, it indicates a critical
+    ///         system resource issue.
+    init() {
         log2n = vDSP_Length(log2(Float(fftSize)))
         guard let setup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2)) else {
-            throw RealtimeError.audioInitializationFailed(
-                NSError(domain: "FrequencyAnalyzer", code: -1,
-                       userInfo: [NSLocalizedDescriptionKey: "Failed to create FFT setup"])
-            )
+            fatalError("Failed to create FFT setup - this indicates a critical system resource issue")
         }
         fftSetup = setup
     }
