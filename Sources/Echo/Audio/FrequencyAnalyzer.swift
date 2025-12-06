@@ -131,7 +131,9 @@ final class FrequencyAnalyzer: @unchecked Sendable {
         let midMaxBin = Int(midMaxFrequency / binFrequencyWidth)
         let highMaxBin = fftSize / 2
         
-        // Sum energy in each band
+        // Sum energy in each band.
+        // Note: Bin 0 contains the DC component (average signal level), not frequency content,
+        // so we intentionally skip it by starting from bin 1.
         let lowEnergy = sumBandEnergy(magnitudes: magnitudes, from: 1, to: lowMaxBin)
         let midEnergy = sumBandEnergy(magnitudes: magnitudes, from: lowMaxBin, to: midMaxBin)
         let highEnergy = sumBandEnergy(magnitudes: magnitudes, from: midMaxBin, to: highMaxBin)
