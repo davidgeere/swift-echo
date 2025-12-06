@@ -40,17 +40,17 @@ public struct AudioLevels: Sendable, Equatable {
     /// An AudioLevels instance with all values set to zero
     public static let zero = AudioLevels()
     
-    /// Returns a smoothed version of these levels transitioning from previous values
+    /// Returns a smoothed version by blending with the current values
     /// - Parameters:
-    ///   - previous: The previous audio levels
-    ///   - factor: Smoothing factor (0.0-1.0, higher = faster response)
+    ///   - current: The current audio levels to blend from
+    ///   - factor: Smoothing factor (0.0-1.0, higher = faster response to new values)
     /// - Returns: Smoothed audio levels
-    public func smoothed(from previous: AudioLevels, factor: Float = 0.3) -> AudioLevels {
+    public func smoothed(from current: AudioLevels, factor: Float = 0.3) -> AudioLevels {
         AudioLevels(
-            level: previous.level + (level - previous.level) * factor,
-            low: previous.low + (low - previous.low) * factor,
-            mid: previous.mid + (mid - previous.mid) * factor,
-            high: previous.high + (high - previous.high) * factor
+            level: current.level + (level - current.level) * factor,
+            low: current.low + (low - current.low) * factor,
+            mid: current.mid + (mid - current.mid) * factor,
+            high: current.high + (high - current.high) * factor
         )
     }
 }
