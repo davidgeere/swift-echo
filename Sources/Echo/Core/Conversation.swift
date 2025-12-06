@@ -17,6 +17,12 @@ public class Conversation: RealtimeClientDelegate {
 
     /// Current conversation mode
     public private(set) var mode: EchoMode
+    
+    /// Current input audio levels (microphone) with frequency bands
+    public private(set) var inputLevels: AudioLevels = .zero
+    
+    /// Current output audio levels (speaker) with frequency bands
+    public private(set) var outputLevels: AudioLevels = .zero
 
     /// Message queue for proper sequencing
     private let messageQueue: MessageQueue
@@ -57,6 +63,8 @@ public class Conversation: RealtimeClientDelegate {
     /// Optional audio playback factory for testing
     private let audioPlaybackFactory: (@Sendable () async -> any AudioPlaybackProtocol)?
 
+    /// Task for observing audio level changes
+    private var audioLevelObservationTask: Task<Void, Never>?
     
     // MARK: - Message Stream
 
@@ -174,10 +182,30 @@ public class Conversation: RealtimeClientDelegate {
             try await client.connect()
             // Only assign if connection succeeds
             realtimeClient = client
+            
+            // Start observing audio levels from events
+            startAudioLevelObservation()
         } catch {
             // Connection failed - clean up and propagate error
             await client.disconnect()
             throw error
+        }
+    }
+    
+    /// Starts observing audio level events and updates observable properties
+    private func startAudioLevelObservation() {
+        audioLevelObservationTask = Task { [weak self] in
+            guard let self else { return }
+            for await event in self.eventEmitter.events {
+                switch event {
+                case .inputLevelsChanged(let levels):
+                    self.inputLevels = levels
+                case .outputLevelsChanged(let levels):
+                    self.outputLevels = levels
+                default:
+                    break
+                }
+            }
         }
     }
 
@@ -888,5 +916,9 @@ public class Conversation: RealtimeClientDelegate {
         realtimeClient = nil
         responsesClient = nil
         turnManager = nil
+    }
+    
+    deinit {
+        audioLevelObservationTask?.cancel()
     }
 }

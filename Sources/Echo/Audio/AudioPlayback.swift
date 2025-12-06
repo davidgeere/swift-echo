@@ -4,6 +4,7 @@
 
 import Foundation
 import AVFoundation
+import os
 
 #if os(iOS)
 import UIKit
@@ -20,6 +21,19 @@ public actor AudioPlayback: AudioPlaybackProtocol {
     private let processor: AudioProcessor
     private var isPlaying = false
     private var audioQueue: [Data] = []
+
+    /// Frequency analyzer for FFT-based level analysis
+    private let analyzer = FrequencyAnalyzer()
+    
+    /// Current smoothed levels (thread-safe via lock)
+    private let currentLevels = OSAllocatedUnfairLock(initialState: AudioLevels.zero)
+    
+    /// Smoothing factor for level transitions (0.0-1.0, higher = faster response)
+    private let smoothingFactor: Float = 0.3
+    
+    /// Audio level stream for output visualizations
+    public let audioLevelStream: AsyncStream<AudioLevels>
+    private let audioLevelContinuation: AsyncStream<AudioLevels>.Continuation
 
     /// Whether playback is currently active
     public var isActive: Bool {
@@ -106,6 +120,15 @@ public actor AudioPlayback: AudioPlaybackProtocol {
     public init(format: AudioFormat = .pcm16) {
         self.format = format
         self.processor = AudioProcessor(targetFormat: format)
+        
+        var levelCont: AsyncStream<AudioLevels>.Continuation?
+        self.audioLevelStream = AsyncStream { continuation in
+            levelCont = continuation
+        }
+        guard let unwrappedLevelCont = levelCont else {
+            preconditionFailure("Failed to initialize audio level stream continuation")
+        }
+        self.audioLevelContinuation = unwrappedLevelCont
     }
 
     // MARK: - Playback Control
@@ -146,6 +169,38 @@ public actor AudioPlayback: AudioPlaybackProtocol {
                 to: engine.mainMixerNode,
                 format: playbackFormat
             )
+            
+            // Install tap on main mixer for output level monitoring
+            let mainMixer = engine.mainMixerNode
+            let mixerFormat = mainMixer.outputFormat(forBus: 0)
+            let sampleRate = Float(mixerFormat.sampleRate)
+            
+            mainMixer.installTap(onBus: 0, bufferSize: 2048, format: mixerFormat) { [weak self] buffer, _ in
+                guard let self else { return }
+                
+                // Extract samples synchronously on audio thread
+                guard let channelData = buffer.floatChannelData?[0] else { return }
+                let frameCount = Int(buffer.frameLength)
+                let samples = Array(UnsafeBufferPointer(start: channelData, count: frameCount))
+                
+                // Process on audio thread (analyzer is thread-safe)
+                let newLevels = self.analyzer.analyze(samples: samples, sampleRate: sampleRate)
+                
+                // Apply smoothing and yield
+                let smoothedLevels = self.currentLevels.withLock { current in
+                    let smoothed = AudioLevels(
+                        level: current.level + (newLevels.level - current.level) * self.smoothingFactor,
+                        low: current.low + (newLevels.low - current.low) * self.smoothingFactor,
+                        mid: current.mid + (newLevels.mid - current.mid) * self.smoothingFactor,
+                        high: current.high + (newLevels.high - current.high) * self.smoothingFactor
+                    )
+                    current = smoothed
+                    return smoothed
+                }
+                
+                // Yield to stream
+                self.audioLevelContinuation.yield(smoothedLevels)
+            }
 
             // Start the engine
             try engine.start()
@@ -166,6 +221,9 @@ public actor AudioPlayback: AudioPlaybackProtocol {
     public func stop() {
         guard isPlaying else { return }
 
+        // Remove tap before stopping
+        audioEngine?.mainMixerNode.removeTap(onBus: 0)
+        
         playerNode?.stop()
         audioEngine?.stop()
 
@@ -177,6 +235,10 @@ public actor AudioPlayback: AudioPlaybackProtocol {
         playerNode = nil
         isPlaying = false
         audioQueue.removeAll()
+        
+        // Reset levels
+        currentLevels.withLock { $0 = .zero }
+        audioLevelContinuation.yield(.zero)
     }
 
     /// Pauses audio playback
@@ -384,5 +446,9 @@ public actor AudioPlayback: AudioPlaybackProtocol {
         if audioEngine?.isRunning == true {
             playerNode.play()
         }
+    }
+    
+    deinit {
+        audioLevelContinuation.finish()
     }
 }
