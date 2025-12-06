@@ -212,7 +212,8 @@ struct FrequencyAnalysisTests {
         // Very low sample rate that would cause overlapping frequency bins
         // At 2000 Hz, bin width = 2000/2048 ≈ 0.98 Hz
         // lowMaxBin = 250/0.98 ≈ 255
-        // midMaxBin = 4000/0.98 ≈ 4081 (exceeds fftSize/2 = 1024)
+        // midMaxBin = 4000/0.98 ≈ 4081, but highMaxBin = fftSize/2 = 1024
+        // This violates the guard condition (midMaxBin < highMaxBin)
         var samples = [Float](repeating: 0, count: 2048)
         for i in 0..<samples.count {
             samples[i] = sin(Float(i) * 0.1)
