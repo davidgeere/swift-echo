@@ -125,7 +125,10 @@ public actor AudioPlayback: AudioPlaybackProtocol {
         self.audioLevelStream = AsyncStream { continuation in
             levelCont = continuation
         }
-        self.audioLevelContinuation = levelCont!
+        guard let unwrappedLevelCont = levelCont else {
+            preconditionFailure("Failed to initialize audio level stream continuation")
+        }
+        self.audioLevelContinuation = unwrappedLevelCont
     }
 
     // MARK: - Playback Control
