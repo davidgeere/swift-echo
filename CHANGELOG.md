@@ -5,6 +5,68 @@ All notable changes to Echo will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2025-12-06
+
+### Added
+
+#### Audio Frequency Analysis
+- **FFT-based frequency analysis** - Full frequency band analysis using Accelerate framework
+  - `AudioLevels` struct with `level`, `low`, `mid`, `high` properties (all 0.0-1.0)
+  - Low band: 20-250Hz (bass, rumble)
+  - Mid band: 250-4000Hz (voice, melody)
+  - High band: 4000-20000Hz (sibilance, air)
+
+- **Input level monitoring** - Microphone audio levels with frequency bands
+  - `conversation.inputLevels` - Observable property on Conversation
+  - `.inputLevelsChanged(levels: AudioLevels)` event via echo.events stream
+  - Automatic smoothing for UI-friendly level transitions
+
+- **Output level monitoring** - Speaker audio levels with frequency bands
+  - `conversation.outputLevels` - Observable property on Conversation
+  - `.outputLevelsChanged(levels: AudioLevels)` event via echo.events stream
+  - Tap automatically installed on mainMixerNode
+
+#### Example Usage
+```swift
+// Observable properties on Conversation (SwiftUI-friendly)
+conversation.inputLevels.level  // Overall mic level
+conversation.inputLevels.low    // Bass frequencies
+conversation.inputLevels.mid    // Voice frequencies  
+conversation.inputLevels.high   // Treble frequencies
+
+conversation.outputLevels.level // Overall output level
+conversation.outputLevels.low   // etc.
+
+// Events via stream
+for await event in echo.events {
+    switch event {
+    case .inputLevelsChanged(let levels):
+        updateInputVisualizer(levels)
+    case .outputLevelsChanged(let levels):
+        updateOutputVisualizer(levels)
+    default:
+        break
+    }
+}
+```
+
+### Changed
+
+- `audioLevelStream` type changed from `AsyncStream<Double>` to `AsyncStream<AudioLevels>`
+- Events now emit `AudioLevels` instead of simple `Double` for richer visualization data
+
+### Deprecated
+
+- `.audioLevelChanged(level: Double)` - Use `.inputLevelsChanged(levels: AudioLevels)` instead
+
+### Technical
+- New `FrequencyAnalyzer.swift` using vDSP FFT from Accelerate framework
+- New `AudioLevels.swift` struct (Sendable, Equatable)
+- Thread-safe level analysis with `OSAllocatedUnfairLock`
+- 17 new tests in `FrequencyAnalysisTests.swift`
+
+---
+
 ## [1.4.0] - 2025-12-06
 
 ### Added
@@ -480,6 +542,7 @@ Echo is a unified Swift library for OpenAI's Realtime API (WebSocket-based voice
 
 ## Version History
 
+- **1.5.0** - Audio frequency analysis and level monitoring
 - **1.4.0** - Audio engine exposure for external monitoring (Issue #8)
 - **1.3.0** - Architecture refactor: Event decoupling
 - **1.2.2** - Audio routing fixes
@@ -499,6 +562,7 @@ This project follows [Semantic Versioning](https://semver.org/):
 - **MINOR** version for backwards-compatible functionality additions
 - **PATCH** version for backwards-compatible bug fixes
 
+[1.5.0]: https://github.com/davidgeere/swift-echo/releases/tag/v1.5.0
 [1.4.0]: https://github.com/davidgeere/swift-echo/releases/tag/v1.4.0
 [1.3.0]: https://github.com/davidgeere/swift-echo/releases/tag/v1.3.0
 [1.2.2]: https://github.com/davidgeere/swift-echo/releases/tag/v1.2.2

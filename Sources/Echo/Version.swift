@@ -11,7 +11,7 @@ import Foundation
 /// Echo library version information
 public enum EchoVersion {
     /// Current version of the Echo library
-    public static let current = Version(major: 1, minor: 4, patch: 0)
+    public static let current = Version(major: 1, minor: 5, patch: 0)
     
     /// Version string (e.g., "1.0.0")
     public static var string: String {
@@ -81,6 +81,42 @@ public struct BuildInfo: Sendable {
 extension EchoVersion {
     /// Version history with release notes
     public static let history: [(version: Version, date: String, notes: String)] = [
+        (
+            version: Version(major: 1, minor: 5, patch: 0),
+            date: "2025-12-06",
+            notes: """
+            🎵 Audio Frequency Analysis & Level Monitoring
+            
+            New Features:
+            • FFT-based frequency analysis for audio levels
+            • AudioLevels struct with level, low, mid, high frequency bands
+            • Input level monitoring (microphone) with frequency bands
+            • Output level monitoring (speaker) with frequency bands
+            • Observable inputLevels/outputLevels properties on Conversation
+            • New events: inputLevelsChanged, outputLevelsChanged
+            
+            API:
+            • conversation.inputLevels - Observable input audio levels
+            • conversation.outputLevels - Observable output audio levels
+            • AudioLevels.level - Overall RMS amplitude (0.0-1.0)
+            • AudioLevels.low - Low frequency band (20-250Hz)
+            • AudioLevels.mid - Mid frequency band (250-4000Hz)
+            • AudioLevels.high - High frequency band (4000-20000Hz)
+            
+            Breaking Changes:
+            • audioLevelStream now emits AudioLevels instead of Double
+            • audioLevelChanged event deprecated in favor of inputLevelsChanged
+            
+            Technical:
+            • FrequencyAnalyzer using Accelerate framework (vDSP FFT)
+            • Thread-safe level analysis with OSAllocatedUnfairLock
+            • Automatic smoothing for level transitions
+            
+            Testing:
+            • New FrequencyAnalysisTests with 17 tests
+            • Updated mocks for AudioLevels type
+            """
+        ),
         (
             version: Version(major: 1, minor: 4, patch: 0),
             date: "2025-12-06",

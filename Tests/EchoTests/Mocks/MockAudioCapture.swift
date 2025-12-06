@@ -10,12 +10,12 @@ import Foundation
 public actor MockAudioCapture: AudioCaptureProtocol {
     private var isRunning = false
     private var captureTask: Task<Void, Never>?
-    private let levelContinuation: AsyncStream<Double>.Continuation
+    private let levelContinuation: AsyncStream<AudioLevels>.Continuation
     
-    public let audioLevelStream: AsyncStream<Double>
+    public let audioLevelStream: AsyncStream<AudioLevels>
     
     public init() {
-        var continuation: AsyncStream<Double>.Continuation?
+        var continuation: AsyncStream<AudioLevels>.Continuation?
         audioLevelStream = AsyncStream { cont in
             continuation = cont
         }
@@ -34,7 +34,7 @@ public actor MockAudioCapture: AudioCaptureProtocol {
                 let base64 = silentAudio.base64EncodedString()
                 
                 await onAudioChunk(base64)
-                levelContinuation.yield(0.0)  // Silent level
+                levelContinuation.yield(.zero)  // Silent level
                 
                 try? await Task.sleep(for: .milliseconds(20))
             }

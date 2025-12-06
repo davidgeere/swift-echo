@@ -12,8 +12,17 @@ public actor MockAudioPlayback: AudioPlaybackProtocol {
     private var isRunning = false
     private var queue: [String] = []
     private var currentOutput: AudioOutputDeviceType = .systemDefault
+    private let levelContinuation: AsyncStream<AudioLevels>.Continuation
     
-    public init() {}
+    public let audioLevelStream: AsyncStream<AudioLevels>
+    
+    public init() {
+        var continuation: AsyncStream<AudioLevels>.Continuation?
+        audioLevelStream = AsyncStream { cont in
+            continuation = cont
+        }
+        levelContinuation = continuation!
+    }
     
     public func start() async throws {
         isRunning = true
@@ -22,11 +31,15 @@ public actor MockAudioPlayback: AudioPlaybackProtocol {
     public func stop() async {
         isRunning = false
         queue.removeAll()
+        levelContinuation.yield(.zero)
     }
     
     public func enqueue(base64Audio: String) async throws {
         guard isRunning else { return }
         queue.append(base64Audio)
+        
+        // Simulate playback and emit mock levels
+        levelContinuation.yield(AudioLevels(level: 0.5, low: 0.3, mid: 0.5, high: 0.2))
         
         // Simulate playback delay (20ms chunks)
         try? await Task.sleep(for: .milliseconds(20))
@@ -34,10 +47,14 @@ public actor MockAudioPlayback: AudioPlaybackProtocol {
         if !queue.isEmpty {
             queue.removeFirst()
         }
+        
+        // Reset levels after playback
+        levelContinuation.yield(.zero)
     }
     
     public func interrupt() async {
         queue.removeAll()
+        levelContinuation.yield(.zero)
     }
     
     public func setAudioOutput(device: AudioOutputDeviceType) async throws {

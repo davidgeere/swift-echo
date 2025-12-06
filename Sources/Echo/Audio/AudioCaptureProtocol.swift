@@ -20,8 +20,8 @@ public protocol AudioCaptureProtocol: Actor {
     /// Resumes audio capture
     func resume() async throws
 
-    /// Stream of audio levels for visualization (0.0 to 1.0)
-    var audioLevelStream: AsyncStream<Double> { get }
+    /// Stream of audio levels for visualization including frequency bands
+    var audioLevelStream: AsyncStream<AudioLevels> { get }
     
     /// Whether audio is currently being captured
     var isActive: Bool { get }
