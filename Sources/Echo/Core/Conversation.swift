@@ -63,6 +63,8 @@ public class Conversation: RealtimeClientDelegate {
     /// Optional audio playback factory for testing
     private let audioPlaybackFactory: (@Sendable () async -> any AudioPlaybackProtocol)?
 
+    /// Task for observing audio level changes
+    private var audioLevelObservationTask: Task<Void, Never>?
     
     // MARK: - Message Stream
 
@@ -192,7 +194,7 @@ public class Conversation: RealtimeClientDelegate {
     
     /// Starts observing audio level events and updates observable properties
     private func startAudioLevelObservation() {
-        Task { [weak self] in
+        audioLevelObservationTask = Task { [weak self] in
             guard let self else { return }
             for await event in self.eventEmitter.events {
                 switch event {
@@ -914,5 +916,9 @@ public class Conversation: RealtimeClientDelegate {
         realtimeClient = nil
         responsesClient = nil
         turnManager = nil
+    }
+    
+    deinit {
+        audioLevelObservationTask?.cancel()
     }
 }
