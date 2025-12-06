@@ -42,8 +42,14 @@ public enum EventType: String, Sendable, CaseIterable {
 
     // MARK: - Audio Events
 
-    /// Audio level changed (for visualizations)
+    /// Audio level changed (for visualizations) - DEPRECATED: Use inputLevelsChanged instead
     case audioLevelChanged
+    
+    /// Input audio levels changed with frequency bands (for visualizations)
+    case inputLevelsChanged
+    
+    /// Output audio levels changed with frequency bands (for visualizations)
+    case outputLevelsChanged
 
     /// Audio status changed (listening, speaking, processing, idle)
     case audioStatusChanged

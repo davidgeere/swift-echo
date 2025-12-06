@@ -53,9 +53,18 @@ public enum EchoEvent: Sendable {
 
     // MARK: - Audio Events
 
-    /// Audio level changed (for visualizations)
+    /// Audio level changed (for visualizations) - DEPRECATED: Use inputLevelsChanged instead
     /// - Parameter level: Audio level from 0.0 (silent) to 1.0 (loudest)
+    @available(*, deprecated, message: "Use inputLevelsChanged instead for frequency band data")
     case audioLevelChanged(level: Double)
+    
+    /// Input audio levels changed with frequency bands (microphone)
+    /// - Parameter levels: Audio levels including overall level and frequency bands
+    case inputLevelsChanged(levels: AudioLevels)
+    
+    /// Output audio levels changed with frequency bands (speaker)
+    /// - Parameter levels: Audio levels including overall level and frequency bands
+    case outputLevelsChanged(levels: AudioLevels)
 
     /// Audio status changed
     /// - Parameter status: The new audio status
@@ -171,6 +180,10 @@ public enum EchoEvent: Sendable {
             return .assistantAudioDelta
         case .audioLevelChanged:
             return .audioLevelChanged
+        case .inputLevelsChanged:
+            return .inputLevelsChanged
+        case .outputLevelsChanged:
+            return .outputLevelsChanged
         case .audioStatusChanged:
             return .audioStatusChanged
         case .audioStarting:

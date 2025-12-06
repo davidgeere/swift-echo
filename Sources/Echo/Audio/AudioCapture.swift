@@ -4,6 +4,7 @@
 
 import Foundation
 @preconcurrency import AVFoundation
+import os
 
 #if os(iOS)
 import UIKit
@@ -19,9 +20,18 @@ public actor AudioCapture: AudioCaptureProtocol {
     private let processor: AudioProcessor
     private var isCapturing = false
 
+    /// Frequency analyzer for FFT-based level analysis
+    private let analyzer = FrequencyAnalyzer()
+    
+    /// Current smoothed levels (thread-safe via lock)
+    private let currentLevels = OSAllocatedUnfairLock(initialState: AudioLevels.zero)
+    
+    /// Smoothing factor for level transitions (0.0-1.0, higher = faster response)
+    private let smoothingFactor: Float = 0.3
+
     /// Audio level stream for visualizations
-    public let audioLevelStream: AsyncStream<Double>
-    private let audioLevelContinuation: AsyncStream<Double>.Continuation
+    public let audioLevelStream: AsyncStream<AudioLevels>
+    private let audioLevelContinuation: AsyncStream<AudioLevels>.Continuation
 
     // MARK: - Initialization
 
@@ -31,7 +41,7 @@ public actor AudioCapture: AudioCaptureProtocol {
         self.format = format
         self.processor = AudioProcessor(targetFormat: format)
 
-        var levelCont: AsyncStream<Double>.Continuation?
+        var levelCont: AsyncStream<AudioLevels>.Continuation?
         self.audioLevelStream = AsyncStream { continuation in
             levelCont = continuation
         }
@@ -91,27 +101,48 @@ public actor AudioCapture: AudioCaptureProtocol {
 
             // Get input format
             let inputFormat = inputNode.outputFormat(forBus: 0)
+            let sampleRate = Float(inputFormat.sampleRate)
 
             guard format.makeAVAudioFormat() != nil else {
                 throw RealtimeError.unsupportedAudioFormat(format.rawValue)
             }
 
             // Install tap on input node
-            let bufferSize: AVAudioFrameCount = 1024
+            let bufferSize: AVAudioFrameCount = 2048
 
             inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: inputFormat) { [weak self] buffer, _ in
-                // Use unstructured Task isolated to the actor to avoid data race
+                guard let self else { return }
+                
+                // Extract samples synchronously on audio thread
+                guard let channelData = buffer.floatChannelData?[0] else { return }
+                let frameCount = Int(buffer.frameLength)
+                let samples = Array(UnsafeBufferPointer(start: channelData, count: frameCount))
+                
+                // Process on audio thread (analyzer is thread-safe)
+                let newLevels = self.analyzer.analyze(samples: samples, sampleRate: sampleRate)
+                
+                // Apply smoothing and yield
+                let smoothedLevels = self.currentLevels.withLock { current in
+                    let smoothed = AudioLevels(
+                        level: current.level + (newLevels.level - current.level) * self.smoothingFactor,
+                        low: current.low + (newLevels.low - current.low) * self.smoothingFactor,
+                        mid: current.mid + (newLevels.mid - current.mid) * self.smoothingFactor,
+                        high: current.high + (newLevels.high - current.high) * self.smoothingFactor
+                    )
+                    current = smoothed
+                    return smoothed
+                }
+                
+                // Yield to stream
+                self.audioLevelContinuation.yield(smoothedLevels)
+                
+                // Process audio data for sending
                 Task { [weak self, onAudioChunk] in
                     guard let self = self else { return }
 
                     do {
-                        // Calculate audio level
-                        // Note: AVAudioPCMBuffer is not Sendable, but we're using it immediately in a controlled manner
-                        nonisolated(unsafe) let capturedBuffer = buffer
-                        let level = AudioLevel.calculate(from: capturedBuffer)
-                        self.audioLevelContinuation.yield(level)
-
                         // Convert to target format
+                        nonisolated(unsafe) let capturedBuffer = buffer
                         let audioData = try await self.processor.convert(capturedBuffer)
 
                         // Encode to base64
@@ -152,7 +183,9 @@ public actor AudioCapture: AudioCaptureProtocol {
         inputNode = nil
         isCapturing = false
 
-        audioLevelContinuation.yield(0.0)
+        // Reset levels
+        currentLevels.withLock { $0 = .zero }
+        audioLevelContinuation.yield(.zero)
     }
 
     /// Pauses audio capture (stops engine but keeps tap installed)

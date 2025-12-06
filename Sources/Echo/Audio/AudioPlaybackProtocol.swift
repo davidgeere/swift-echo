@@ -37,4 +37,7 @@ public protocol AudioPlaybackProtocol: Actor {
     
     /// The underlying AVAudioEngine (for external audio monitoring)
     var audioEngine: AVAudioEngine? { get }
+    
+    /// Stream of audio levels for output visualization including frequency bands
+    var audioLevelStream: AsyncStream<AudioLevels> { get }
 }

@@ -307,12 +307,12 @@ struct AudioLifecycleEventTests {
         
         // Create a mock audio capture that throws an error
         actor FailingMockAudioCapture: AudioCaptureProtocol {
-            let audioLevelStream: AsyncStream<Double>
-            private let levelContinuation: AsyncStream<Double>.Continuation
+            let audioLevelStream: AsyncStream<AudioLevels>
+            private let levelContinuation: AsyncStream<AudioLevels>.Continuation
             var isActive: Bool = false
             
             init() {
-                var continuation: AsyncStream<Double>.Continuation?
+                var continuation: AsyncStream<AudioLevels>.Continuation?
                 audioLevelStream = AsyncStream { cont in
                     continuation = cont
                 }

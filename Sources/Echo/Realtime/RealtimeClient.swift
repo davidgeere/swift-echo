@@ -287,11 +287,11 @@ public actor RealtimeClient: TurnManagerDelegate {
             }
             self.audioCapture = capture
 
-            // Monitor audio levels
+            // Monitor input audio levels
             Task {
                 let levelStream = await capture.audioLevelStream
-                for await level in levelStream {
-                    await self.eventEmitter.emit(.audioLevelChanged(level: level))
+                for await levels in levelStream {
+                    await self.eventEmitter.emit(.inputLevelsChanged(levels: levels))
                 }
             }
 
@@ -305,6 +305,14 @@ public actor RealtimeClient: TurnManagerDelegate {
             
             try await playback.start()
             self.audioPlayback = playback
+            
+            // Monitor output audio levels
+            Task {
+                let levelStream = await playback.audioLevelStream
+                for await levels in levelStream {
+                    await self.eventEmitter.emit(.outputLevelsChanged(levels: levels))
+                }
+            }
 
             // Set up route change observer for audio output changes
             #if os(iOS)
