@@ -134,6 +134,13 @@ final class FrequencyAnalyzer: @unchecked Sendable {
         let midMaxBin = Int(midMaxFrequency / binFrequencyWidth)
         let highMaxBin = fftSize / 2
         
+        // Validate that frequency bands don't overlap
+        // This can happen with very low sample rates where bin resolution is poor
+        guard lowMaxBin < midMaxBin && midMaxBin < highMaxBin else {
+            // Sample rate too low for meaningful frequency band separation
+            return (low: 0, mid: 0, high: 0)
+        }
+        
         // Sum energy in each band.
         // Note: Bin 0 contains the DC component (average signal level), not frequency content,
         // so we intentionally skip it by starting from bin 1.

@@ -205,6 +205,31 @@ struct FrequencyAnalysisTests {
         #expect(result.level >= 0 && result.level <= 1)
     }
     
+    @Test
+    func frequencyAnalyzerHandlesVeryLowSampleRate() {
+        let analyzer = FrequencyAnalyzer()
+        
+        // Test with extremely low sample rate where frequency bands would overlap
+        // At 1000 Hz sample rate with FFT size 2048:
+        // bin width = 1000/2048 ≈ 0.49 Hz
+        // lowMaxBin (250 Hz) ≈ 512, midMaxBin (4000 Hz) would be > nyquist (500 Hz)
+        // This should trigger the validation guard and return zeros for frequency bands
+        var samples = [Float](repeating: 0, count: 2048)
+        for i in 0..<samples.count {
+            samples[i] = sin(Float(i) * 0.05)
+        }
+        
+        let result = analyzer.analyze(samples: samples, sampleRate: 1000)
+        
+        // Level should still be calculated (RMS-based)
+        #expect(result.level >= 0)
+        
+        // But frequency bands should be zero due to overlap protection
+        #expect(result.low == 0)
+        #expect(result.mid == 0)
+        #expect(result.high == 0)
+    }
+    
     // MARK: - Integration Tests
     
     @Test
