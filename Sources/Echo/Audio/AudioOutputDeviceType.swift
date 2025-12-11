@@ -2,28 +2,33 @@
 // Echo - Audio
 // Audio output device type enumeration
 
-import Foundation
 import AVFoundation
+import Foundation
 
 /// Represents the type of audio output device
 public enum AudioOutputDeviceType: Sendable, Equatable {
     /// Built-in speaker
     case builtInSpeaker
-    
+
     /// Built-in receiver (earpiece)
     case builtInReceiver
-    
+
     /// Bluetooth audio device
     /// - Parameter name: Optional device name (e.g., "AirPods Pro", "External Speaker")
     case bluetooth(name: String?)
-    
+
     /// Wired headphones
     /// - Parameter name: Optional device name
     case wiredHeadphones(name: String?)
-    
+
     /// Let system choose the default route
     case systemDefault
-    
+
+    /// Smart default: Bluetooth if connected, otherwise speaker with echo protection
+    /// Best for voice conversations - provides speaker output by default while
+    /// automatically switching to Bluetooth when available
+    case smart
+
     /// Human-readable description for UI display
     public var description: String {
         switch self {
@@ -37,9 +42,11 @@ public enum AudioOutputDeviceType: Sendable, Equatable {
             return name ?? "Headphones"
         case .systemDefault:
             return "System Default"
+        case .smart:
+            return "Smart (Bluetooth/Speaker)"
         }
     }
-    
+
     /// Whether this is a Bluetooth device
     public var isBluetooth: Bool {
         switch self {
@@ -49,7 +56,24 @@ public enum AudioOutputDeviceType: Sendable, Equatable {
             return false
         }
     }
-    
+
+    /// Whether this device type may produce echo (speaker output picked up by microphone)
+    public var mayProduceEcho: Bool {
+        switch self {
+        case .builtInSpeaker:
+            return true
+        case .bluetooth:
+            // Bluetooth speakers may produce echo, earbuds usually don't
+            // We conservatively assume they may
+            return true
+        case .builtInReceiver, .wiredHeadphones:
+            return false
+        case .systemDefault, .smart:
+            // Unknown, assume may produce echo
+            return true
+        }
+    }
+
     /// Creates an AudioOutputDeviceType from AVAudioSession port type and name
     /// - Parameters:
     ///   - portType: The AVAudioSession port type
@@ -58,7 +82,7 @@ public enum AudioOutputDeviceType: Sendable, Equatable {
     #if os(iOS)
     static func from(portType: AVAudioSession.Port, portName: String) -> AudioOutputDeviceType {
         let name: String? = portName.isEmpty ? nil : portName
-        
+
         switch portType {
         case .builtInSpeaker:
             return .builtInSpeaker
@@ -74,4 +98,3 @@ public enum AudioOutputDeviceType: Sendable, Equatable {
     }
     #endif
 }
-

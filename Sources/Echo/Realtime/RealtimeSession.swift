@@ -26,6 +26,9 @@ public struct RealtimeSession: Sendable {
     /// Whether to transcribe user audio
     public let inputAudioTranscription: InputAudioTranscription?
 
+    /// Input audio configuration including noise reduction
+    public let inputAudioConfiguration: InputAudioConfiguration?
+
     /// Turn detection configuration
     public let turnDetection: TurnDetection?
 
@@ -54,6 +57,7 @@ public struct RealtimeSession: Sendable {
     ///   - inputAudioFormat: Input audio format
     ///   - outputAudioFormat: Output audio format
     ///   - inputAudioTranscription: Transcription config
+    ///   - inputAudioConfiguration: Input audio configuration including noise reduction
     ///   - turnDetection: Turn detection config
     ///   - instructions: System instructions
     ///   - tools: Available tools
@@ -67,6 +71,7 @@ public struct RealtimeSession: Sendable {
         inputAudioFormat: AudioFormat = .pcm16,
         outputAudioFormat: AudioFormat = .pcm16,
         inputAudioTranscription: InputAudioTranscription? = InputAudioTranscription(),
+        inputAudioConfiguration: InputAudioConfiguration? = nil,
         turnDetection: TurnDetection? = .default,
         instructions: String? = nil,
         tools: [SendableJSON]? = nil,
@@ -80,6 +85,7 @@ public struct RealtimeSession: Sendable {
         self.inputAudioFormat = inputAudioFormat
         self.outputAudioFormat = outputAudioFormat
         self.inputAudioTranscription = inputAudioTranscription
+        self.inputAudioConfiguration = inputAudioConfiguration
         self.turnDetection = turnDetection
         self.instructions = instructions
         self.tools = tools
@@ -101,6 +107,11 @@ public struct RealtimeSession: Sendable {
 
         if let transcription = inputAudioTranscription {
             config["input_audio_transcription"] = transcription.toRealtimeFormat()
+        }
+
+        // Add input audio configuration (noise reduction)
+        if let inputAudioConfig = inputAudioConfiguration?.toRealtimeFormat() {
+            config["input_audio"] = inputAudioConfig
         }
 
         if let turnDetection = turnDetection?.toRealtimeFormat() {

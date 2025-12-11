@@ -22,16 +22,32 @@ public actor AudioCapture: AudioCaptureProtocol {
 
     /// Frequency analyzer for FFT-based level analysis
     private let analyzer = FrequencyAnalyzer()
-    
+
     /// Current smoothed levels (thread-safe via lock)
     private let currentLevels = OSAllocatedUnfairLock(initialState: AudioLevels.zero)
-    
+
     /// Smoothing factor for level transitions (0.0-1.0, higher = faster response)
     private let smoothingFactor: Float = 0.3
 
     /// Audio level stream for visualizations
     public let audioLevelStream: AsyncStream<AudioLevels>
     private let audioLevelContinuation: AsyncStream<AudioLevels>.Continuation
+
+    // MARK: - Gating Properties (Echo Protection)
+
+    /// Whether audio gating is enabled (thread-safe via lock)
+    private let gatingState = OSAllocatedUnfairLock(initialState: GatingState(isEnabled: false, threshold: 0.0))
+
+    /// State for audio gating
+    private struct GatingState {
+        var isEnabled: Bool
+        var threshold: Float
+    }
+
+    /// Whether audio gating is currently enabled
+    public var isGatingEnabled: Bool {
+        return gatingState.withLock { $0.isEnabled }
+    }
 
     // MARK: - Initialization
 
@@ -46,6 +62,30 @@ public actor AudioCapture: AudioCaptureProtocol {
             levelCont = continuation
         }
         self.audioLevelContinuation = levelCont!
+    }
+
+    // MARK: - Gating Control (Echo Protection)
+
+    /// Enables audio gating for echo protection
+    ///
+    /// When gating is enabled, only audio chunks with RMS level above the threshold
+    /// will be forwarded. This helps filter out echo while allowing genuine speech.
+    ///
+    /// - Parameter threshold: RMS level threshold (0.0-1.0)
+    public func enableGating(threshold: Float) {
+        let clampedThreshold = min(max(threshold, 0.0), 1.0)
+        gatingState.withLock { state in
+            state.isEnabled = true
+            state.threshold = clampedThreshold
+        }
+    }
+
+    /// Disables audio gating
+    public func disableGating() {
+        gatingState.withLock { state in
+            state.isEnabled = false
+            state.threshold = 0.0
+        }
     }
 
     // MARK: - Capture Control
@@ -112,15 +152,15 @@ public actor AudioCapture: AudioCaptureProtocol {
 
             inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: inputFormat) { [weak self] buffer, _ in
                 guard let self else { return }
-                
+
                 // Extract samples synchronously on audio thread
                 guard let channelData = buffer.floatChannelData?[0] else { return }
                 let frameCount = Int(buffer.frameLength)
                 let samples = Array(UnsafeBufferPointer(start: channelData, count: frameCount))
-                
+
                 // Process on audio thread (analyzer is thread-safe)
                 let newLevels = self.analyzer.analyze(samples: samples, sampleRate: sampleRate)
-                
+
                 // Apply smoothing and yield
                 let smoothedLevels = self.currentLevels.withLock { current in
                     let smoothed = AudioLevels(
@@ -132,10 +172,21 @@ public actor AudioCapture: AudioCaptureProtocol {
                     current = smoothed
                     return smoothed
                 }
-                
-                // Yield to stream
+
+                // Yield to stream (always, for visualizations)
                 self.audioLevelContinuation.yield(smoothedLevels)
-                
+
+                // Check gating state (thread-safe read)
+                let (isGated, gateThreshold) = self.gatingState.withLock { state in
+                    (state.isEnabled, state.threshold)
+                }
+
+                // If gated and level is below threshold, don't send audio
+                if isGated && smoothedLevels.level < gateThreshold {
+                    // Audio is below threshold, filter it out (echo protection)
+                    return
+                }
+
                 // Process audio data for sending
                 Task { [weak self, onAudioChunk] in
                     guard let self = self else { return }
@@ -186,6 +237,12 @@ public actor AudioCapture: AudioCaptureProtocol {
         // Reset levels
         currentLevels.withLock { $0 = .zero }
         audioLevelContinuation.yield(.zero)
+
+        // Reset gating state
+        gatingState.withLock { state in
+            state.isEnabled = false
+            state.threshold = 0.0
+        }
     }
 
     /// Pauses audio capture (stops engine but keeps tap installed)
@@ -210,11 +267,11 @@ public actor AudioCapture: AudioCaptureProtocol {
         if !engine.isRunning {
             // Stop engine first if it's in a bad state
             engine.stop()
-            
+
             // Restart the engine
             try engine.start()
         }
-        
+
         // Ensure we're still capturing
         if !isCapturing {
             isCapturing = true

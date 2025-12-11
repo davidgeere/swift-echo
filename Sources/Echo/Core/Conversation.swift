@@ -878,10 +878,12 @@ public class Conversation: RealtimeClientDelegate {
         // Build updated VAD configuration
         let updatedVAD = VADConfiguration(
             type: currentVAD.type,
+            eagerness: currentVAD.eagerness,
             threshold: threshold ?? currentVAD.threshold,
             silenceDurationMs: silenceDuration.map { Int($0.components.seconds * 1000) } ?? currentVAD.silenceDurationMs,
             prefixPaddingMs: prefixPadding.map { Int($0.components.seconds * 1000) } ?? currentVAD.prefixPaddingMs,
-            enableInterruption: currentVAD.enableInterruption
+            interruptResponse: currentVAD.interruptResponse,
+            createResponse: currentVAD.createResponse
         )
 
         // Create session update with new VAD settings

@@ -46,6 +46,14 @@ public actor RealtimeClient: TurnManagerDelegate {
     private var currentAssistantItemId: String?
     private var currentAssistantText: String = ""
 
+    // MARK: - Echo Protection State
+
+    /// Whether the assistant is currently speaking (producing audio)
+    private var isAssistantSpeaking = false
+
+    /// Task for delayed gating disable after assistant stops speaking
+    private var postSpeechGatingTask: Task<Void, Never>?
+
     // Stored for cleanup
     #if os(iOS)
     private var routeChangeObserver: NSObjectProtocol?
@@ -222,6 +230,10 @@ public actor RealtimeClient: TurnManagerDelegate {
     public func disconnect() async {
         guard sessionState != .disconnected else { return }
 
+        // Cancel any pending post-speech gating task
+        postSpeechGatingTask?.cancel()
+        postSpeechGatingTask = nil
+
         // Stop audio
         await stopAudio()
 
@@ -278,7 +290,7 @@ public actor RealtimeClient: TurnManagerDelegate {
             } else {
                 capture = AudioCapture(format: configuration.audioFormat)
             }
-            
+
             try await capture.start { [weak self] base64Audio in
                 guard let self = self else { return }
 
@@ -302,10 +314,10 @@ public actor RealtimeClient: TurnManagerDelegate {
             } else {
                 playback = AudioPlayback(format: configuration.audioFormat)
             }
-            
+
             try await playback.start()
             self.audioPlayback = playback
-            
+
             // Monitor output audio levels
             Task {
                 let levelStream = await playback.audioLevelStream
@@ -317,6 +329,11 @@ public actor RealtimeClient: TurnManagerDelegate {
             // Set up route change observer for audio output changes
             #if os(iOS)
             await observeAudioRouteChanges()
+
+            // Apply default audio output if configured
+            if let defaultOutput = configuration.defaultAudioOutput {
+                try await applyDefaultAudioOutput(defaultOutput)
+            }
             #endif
 
             // Emit audio started event after both capture and playback are ready
@@ -337,6 +354,11 @@ public actor RealtimeClient: TurnManagerDelegate {
         await audioPlayback?.stop()
         audioCapture = nil
         audioPlayback = nil
+
+        // Reset echo protection state
+        isAssistantSpeaking = false
+        postSpeechGatingTask?.cancel()
+        postSpeechGatingTask = nil
 
         // Emit audio stopped event if audio was started
         if wasStarted {
@@ -374,22 +396,22 @@ public actor RealtimeClient: TurnManagerDelegate {
                 ])
             )
         }
-        
+
         // CRITICAL FIX: Stop capture engine before route change (same as playback)
         // This prevents route caching issues
         let captureActiveBefore = await audioCapture?.isActive ?? false
         let needsCaptureRestart = captureActiveBefore
-        
+
         if let capture = audioCapture, captureActiveBefore {
             // Stop the engine (keeps tap installed, ready for restart)
             await capture.pause()
             // Small delay to ensure capture fully stops
-            try await Task.sleep(nanoseconds: 20_000_000) // 20ms
+            try await Task.sleep(nanoseconds: 20_000_000)  // 20ms
         }
-        
+
         // Change playback route (this will stop/restart playback engine)
         try await playback.setAudioOutput(device: device)
-        
+
         // CRITICAL FIX: Restart capture engine after route change
         // Both engines need to restart with the new route
         if let capture = audioCapture, needsCaptureRestart {
@@ -399,26 +421,29 @@ public actor RealtimeClient: TurnManagerDelegate {
                 // Don't throw - playback still works, just log the error
             }
         }
-        
+
+        // Auto-switch VAD configuration based on audio output device
+        await autoSwitchVADForDevice(device)
+
         // Emit event for output change
         let currentDevice = await playback.currentAudioOutput
         await eventEmitter.emit(.audioOutputChanged(device: currentDevice))
     }
-    
+
     /// List of available audio output devices
     public var availableAudioOutputDevices: [AudioOutputDeviceType] {
         get async {
             return await audioPlayback?.availableAudioOutputDevices ?? []
         }
     }
-    
+
     /// Current active audio output device
     public var currentAudioOutput: AudioOutputDeviceType {
         get async {
             return await audioPlayback?.currentAudioOutput ?? .systemDefault
         }
     }
-    
+
     /// Installs an audio tap on the playback engine's main mixer node for external monitoring
     /// - Parameters:
     ///   - bufferSize: The buffer size for the tap (default: 1024)
@@ -437,7 +462,7 @@ public actor RealtimeClient: TurnManagerDelegate {
                 ])
             )
         }
-        
+
         guard let engine = await playback.audioEngine else {
             throw RealtimeError.audioPlaybackFailed(
                 NSError(domain: "RealtimeClient", code: -4, userInfo: [
@@ -445,16 +470,17 @@ public actor RealtimeClient: TurnManagerDelegate {
                 ])
             )
         }
-        
+
         let mixer = engine.mainMixerNode
         let tapFormat = format ?? mixer.outputFormat(forBus: 0)
         mixer.installTap(onBus: 0, bufferSize: bufferSize, format: tapFormat, block: handler)
     }
-    
+
     /// Removes the audio tap from the playback engine's main mixer node
     public func removeAudioTap() async {
         guard let playback = audioPlayback,
-              let engine = await playback.audioEngine else {
+            let engine = await playback.audioEngine
+        else {
             return
         }
         engine.mainMixerNode.removeTap(onBus: 0)
@@ -470,9 +496,9 @@ public actor RealtimeClient: TurnManagerDelegate {
             "content": .array([
                 .object([
                     "type": .string("input_text"),
-                    "text": .string(text)
+                    "text": .string(text),
                 ])
-            ])
+            ]),
         ])
 
         try await send(.conversationItemCreate(item: item, previousItemId: nil))
@@ -483,29 +509,156 @@ public actor RealtimeClient: TurnManagerDelegate {
     /// - Parameter turnDetection: The turn detection mode to use
     /// - Throws: RealtimeError if send fails
     public func updateSessionConfig(turnDetection: TurnDetection) async throws {
-        var sessionConfig: [String: SendableJSON] = [:]
-
-        switch turnDetection {
-        case .automatic(let config):
-            sessionConfig["turn_detection"] = .object([
-                "type": .string(config.type.rawValue),
-                "threshold": .number(config.threshold),
-                "prefix_padding_ms": .number(Double(config.prefixPaddingMs)),
-                "silence_duration_ms": .number(Double(config.silenceDurationMs))
-            ])
-        case .manual:
-            sessionConfig["turn_detection"] = .object([
-                "type": .string("server_vad"),
-                "threshold": .number(0.5),
-                "silence_duration_ms": .number(Double(Int.max)),
-                "prefix_padding_ms": .number(300.0)
-            ])
-        case .disabled:
-            sessionConfig["turn_detection"] = SendableJSON.null
+        guard let vadConfig = turnDetection.vadConfiguration else {
+            // Handle disabled or manual mode
+            var sessionConfig: [String: SendableJSON] = [:]
+            switch turnDetection {
+            case .manual:
+                sessionConfig["turn_detection"] = .object([
+                    "type": .string("server_vad"),
+                    "threshold": .number(0.5),
+                    "silence_duration_ms": .number(Double(Int.max)),
+                    "prefix_padding_ms": .number(300.0),
+                ])
+            case .disabled:
+                sessionConfig["turn_detection"] = SendableJSON.null
+            case .automatic:
+                break  // Handled below
+            }
+            try await send(.sessionUpdate(session: .object(sessionConfig)))
+            return
         }
+
+        // Build turn detection config based on VAD type
+        var turnDetectionConfig: [String: SendableJSON] = [
+            "type": .string(vadConfig.type.rawValue),
+            "create_response": .bool(vadConfig.createResponse),
+            "interrupt_response": .bool(vadConfig.interruptResponse),
+        ]
+
+        switch vadConfig.type {
+        case .serverVAD:
+            turnDetectionConfig["threshold"] = .number(vadConfig.threshold)
+            turnDetectionConfig["prefix_padding_ms"] = .number(Double(vadConfig.prefixPaddingMs))
+            turnDetectionConfig["silence_duration_ms"] = .number(Double(vadConfig.silenceDurationMs))
+
+        case .semanticVAD:
+            turnDetectionConfig["eagerness"] = .string(vadConfig.eagerness.rawValue)
+        }
+
+        let sessionConfig: [String: SendableJSON] = [
+            "turn_detection": .object(turnDetectionConfig)
+        ]
 
         try await send(.sessionUpdate(session: .object(sessionConfig)))
     }
+
+    // MARK: - Echo Protection
+
+    /// Enables echo protection gating on audio capture
+    private func enableEchoProtectionGating() async {
+        guard let echoProtection = configuration.echoProtection,
+            echoProtection.enabled,
+            let capture = audioCapture
+        else {
+            return
+        }
+
+        // Cancel any pending disable task
+        postSpeechGatingTask?.cancel()
+        postSpeechGatingTask = nil
+
+        // Enable gating with configured threshold
+        await capture.enableGating(threshold: echoProtection.bargeInThreshold)
+    }
+
+    /// Disables echo protection gating on audio capture after delay
+    private func disableEchoProtectionGatingAfterDelay() async {
+        guard let echoProtection = configuration.echoProtection,
+            echoProtection.enabled
+        else {
+            return
+        }
+
+        // Cancel any existing task
+        postSpeechGatingTask?.cancel()
+
+        // Create new delayed disable task
+        postSpeechGatingTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: echoProtection.postSpeechDelay)
+                guard !Task.isCancelled else { return }
+                await self?.audioCapture?.disableGating()
+            } catch {
+                // Task was cancelled
+            }
+        }
+    }
+
+    /// Auto-switches VAD configuration based on audio output device
+    private func autoSwitchVADForDevice(_ device: AudioOutputDeviceType) async {
+        // Only auto-switch if echo protection is enabled
+        guard let echoProtection = configuration.echoProtection,
+            echoProtection.enabled
+        else {
+            return
+        }
+
+        let vadConfig: VADConfiguration
+        switch device {
+        case .builtInSpeaker:
+            // Speaker needs echo protection - use semantic VAD with low eagerness
+            vadConfig = .speakerOptimized
+
+        case .builtInReceiver, .wiredHeadphones:
+            // Earpiece and headphones don't need echo protection
+            vadConfig = .earpiece
+
+        case .bluetooth:
+            // Bluetooth may vary - use semantic VAD with medium eagerness
+            vadConfig = .bluetooth
+
+        case .systemDefault, .smart:
+            // For system default, check the actual current output
+            // For now, use speaker-optimized to be safe
+            vadConfig = .speakerOptimized
+        }
+
+        // Update server VAD configuration
+        do {
+            try await updateSessionConfig(turnDetection: .automatic(vadConfig))
+        } catch {
+            // Log error but don't throw - VAD update is best-effort
+            await eventEmitter.emit(.error(error: error))
+        }
+    }
+
+    /// Applies the default audio output configuration
+    #if os(iOS)
+    private func applyDefaultAudioOutput(_ defaultOutput: AudioOutputDeviceType) async throws {
+        switch defaultOutput {
+        case .smart:
+            // Smart default: Bluetooth if connected, otherwise speaker
+            let availableDevices = await availableAudioOutputDevices
+            if availableDevices.contains(where: { $0.isBluetooth }) {
+                // Find the first Bluetooth device
+                if let bluetoothDevice = availableDevices.first(where: { $0.isBluetooth }) {
+                    try await setAudioOutput(device: bluetoothDevice)
+                }
+            } else {
+                // Fall back to speaker
+                try await setAudioOutput(device: .builtInSpeaker)
+            }
+
+        case .builtInSpeaker, .builtInReceiver, .bluetooth, .wiredHeadphones:
+            try await setAudioOutput(device: defaultOutput)
+
+        case .systemDefault:
+            // Don't change anything, use system default
+            break
+        }
+    }
+    #endif
 
     // MARK: - Private Helpers
 
@@ -516,7 +669,8 @@ public actor RealtimeClient: TurnManagerDelegate {
         // startEventListener() will process the session.created event and set sessionId.
         // We just wait for sessionId to be set.
 
-        let sessionId = try await withTimeout(seconds: 10) { @Sendable [weak self] () async throws -> String in
+        let sessionId = try await withTimeout(seconds: 10) {
+            @Sendable [weak self] () async throws -> String in
             guard let self = self else {
                 throw RealtimeError.sessionInitializationFailed("Client deallocated")
             }
@@ -559,6 +713,7 @@ public actor RealtimeClient: TurnManagerDelegate {
             inputAudioFormat: configuration.audioFormat,
             outputAudioFormat: configuration.audioFormat,
             inputAudioTranscription: configuration.enableTranscription ? InputAudioTranscription() : nil,
+            inputAudioConfiguration: configuration.inputAudioConfiguration,
             turnDetection: configuration.turnDetection,
             instructions: configuration.instructions,
             tools: toolsJSON,
@@ -609,7 +764,8 @@ public actor RealtimeClient: TurnManagerDelegate {
 
         // Error events
         case .error(let code, let message, _):
-            await eventEmitter.emit(.error(error: RealtimeError.serverError(code: code, message: message)))
+            await eventEmitter.emit(
+                .error(error: RealtimeError.serverError(code: code, message: message)))
 
         // Audio buffer committed - creates message slot
         case .inputAudioBufferCommitted(let itemId, _):
@@ -624,7 +780,7 @@ public actor RealtimeClient: TurnManagerDelegate {
         case .inputAudioBufferSpeechStarted:
             // Stop assistant playback when user starts speaking
             await audioPlayback?.interrupt()
-            
+
             // Emit audio status change
             await eventEmitter.emit(.audioStatusChanged(status: .listening))
 
@@ -641,7 +797,7 @@ public actor RealtimeClient: TurnManagerDelegate {
         case .inputAudioBufferSpeechStopped:
             // Emit processing status when speech stops
             await eventEmitter.emit(.audioStatusChanged(status: .processing))
-            
+
             // Route through TurnManager if available, otherwise emit directly
             if let turnManager = turnManager {
                 await turnManager.handleUserStoppedSpeaking()
@@ -658,13 +814,20 @@ public actor RealtimeClient: TurnManagerDelegate {
             // Notify delegate directly
             await delegate?.realtimeClient(self, didReceiveTranscript: transcript, itemId: itemId)
             // Also emit event for external observers
-            await eventEmitter.emit(.userTranscriptionCompleted(transcript: transcript, itemId: itemId))
+            await eventEmitter.emit(
+                .userTranscriptionCompleted(transcript: transcript, itemId: itemId))
 
         // Audio response
         case .responseAudioDelta(_, _, _, _, let delta):
+            // Enable echo protection gating when assistant starts producing audio
+            if !isAssistantSpeaking {
+                isAssistantSpeaking = true
+                await enableEchoProtectionGating()
+            }
+
             // Emit speaking status when audio starts
             await eventEmitter.emit(.audioStatusChanged(status: .speaking))
-            
+
             // Play audio chunk
             if let playback = audioPlayback {
                 // Decode base64 to Data for the event
@@ -709,9 +872,15 @@ public actor RealtimeClient: TurnManagerDelegate {
             await eventEmitter.emit(.assistantResponseCreated(itemId: item.id))
 
         case .responseDone:
+            // Mark assistant as no longer speaking
+            isAssistantSpeaking = false
+
+            // Disable echo protection gating after delay
+            await disableEchoProtectionGatingAfterDelay()
+
             // Emit idle status when response completes
             await eventEmitter.emit(.audioStatusChanged(status: .idle))
-            
+
             // Route through TurnManager if available
             if let turnManager = turnManager {
                 await turnManager.handleAssistantFinishedSpeaking()
@@ -722,9 +891,11 @@ public actor RealtimeClient: TurnManagerDelegate {
             // Emit response done with complete text
             if let itemId = currentAssistantItemId {
                 // Notify delegate directly
-                await delegate?.realtimeClient(self, didReceiveAssistantResponse: currentAssistantText, itemId: itemId)
+                await delegate?.realtimeClient(
+                    self, didReceiveAssistantResponse: currentAssistantText, itemId: itemId)
                 // Also emit event for external observers
-                await eventEmitter.emit(.assistantResponseDone(itemId: itemId, text: currentAssistantText))
+                await eventEmitter.emit(
+                    .assistantResponseDone(itemId: itemId, text: currentAssistantText))
                 // Clear for next response
                 currentAssistantItemId = nil
                 currentAssistantText = ""
@@ -736,10 +907,10 @@ public actor RealtimeClient: TurnManagerDelegate {
             let argumentsData = argumentsString.data(using: .utf8) ?? Data()
             let arguments = (try? SendableJSON.from(data: argumentsData)) ?? .null
             let toolCall = ToolCall(id: callId, name: name, arguments: arguments)
-            
+
             // Emit event for external observers
             await eventEmitter.emit(.toolCallRequested(toolCall: toolCall))
-            
+
             // Execute tool via executor if available, otherwise notify delegate
             if let executor = toolExecutor {
                 let result = await executor.execute(toolCall: toolCall)
@@ -762,7 +933,9 @@ public actor RealtimeClient: TurnManagerDelegate {
         }
     }
 
-    private func withTimeout<T: Sendable>(seconds: TimeInterval, operation: @escaping @Sendable () async throws -> T) async throws -> T {
+    private func withTimeout<T: Sendable>(
+        seconds: TimeInterval, operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
         try await withThrowingTaskGroup(of: T.self) { group in
             group.addTask {
                 try await operation()
@@ -781,12 +954,12 @@ public actor RealtimeClient: TurnManagerDelegate {
             return result
         }
     }
-    
+
     /// Observes audio route changes and emits events when output device changes
     #if os(iOS)
     private func observeAudioRouteChanges() async {
         let notificationCenter = NotificationCenter.default
-        
+
         // Store observer for cleanup
         routeChangeObserver = notificationCenter.addObserver(
             forName: AVAudioSession.routeChangeNotification,
@@ -795,11 +968,15 @@ public actor RealtimeClient: TurnManagerDelegate {
         ) { [weak self] notification in
             Task { [weak self] in
                 guard let self = self,
-                      let playback = await self.audioPlayback else { return }
-                
+                    let playback = await self.audioPlayback
+                else { return }
+
                 // Get current output device
                 let currentDevice = await playback.currentAudioOutput
-                
+
+                // Auto-switch VAD for the new device
+                await self.autoSwitchVADForDevice(currentDevice)
+
                 // Emit event for output change
                 await self.eventEmitter.emit(.audioOutputChanged(device: currentDevice))
             }
@@ -839,6 +1016,15 @@ public struct RealtimeClientConfiguration: Sendable {
     /// Maximum output tokens
     public let maxOutputTokens: Int?
 
+    /// Default audio output device (nil = system default)
+    public let defaultAudioOutput: AudioOutputDeviceType?
+
+    /// Echo protection configuration for speaker mode
+    public let echoProtection: EchoProtectionConfiguration?
+
+    /// Input audio configuration (noise reduction)
+    public let inputAudioConfiguration: InputAudioConfiguration?
+
     /// Creates a configuration
     /// - Parameters:
     ///   - model: Realtime model (MUST be .gptRealtime or .gptRealtimeMini)
@@ -850,6 +1036,9 @@ public struct RealtimeClientConfiguration: Sendable {
     ///   - startAudioAutomatically: Auto-start audio
     ///   - temperature: Sampling temperature
     ///   - maxOutputTokens: Max output tokens
+    ///   - defaultAudioOutput: Default audio output device
+    ///   - echoProtection: Echo protection configuration
+    ///   - inputAudioConfiguration: Input audio configuration (noise reduction)
     public init(
         model: RealtimeModel,
         voice: VoiceType = .alloy,
@@ -859,7 +1048,10 @@ public struct RealtimeClientConfiguration: Sendable {
         enableTranscription: Bool = true,
         startAudioAutomatically: Bool = true,
         temperature: Double? = 0.8,
-        maxOutputTokens: Int? = nil
+        maxOutputTokens: Int? = nil,
+        defaultAudioOutput: AudioOutputDeviceType? = nil,
+        echoProtection: EchoProtectionConfiguration? = nil,
+        inputAudioConfiguration: InputAudioConfiguration? = nil
     ) {
         self.model = model
         self.voice = voice
@@ -870,6 +1062,9 @@ public struct RealtimeClientConfiguration: Sendable {
         self.startAudioAutomatically = startAudioAutomatically
         self.temperature = temperature
         self.maxOutputTokens = maxOutputTokens
+        self.defaultAudioOutput = defaultAudioOutput
+        self.echoProtection = echoProtection
+        self.inputAudioConfiguration = inputAudioConfiguration
     }
 
     /// Default configuration using gpt-realtime model
@@ -890,5 +1085,18 @@ public struct RealtimeClientConfiguration: Sendable {
         turnDetection: .responsive,
         enableTranscription: true,
         startAudioAutomatically: true
+    )
+
+    /// Speaker-optimized configuration with echo protection
+    public static let speakerOptimized = RealtimeClientConfiguration(
+        model: .gptRealtime,
+        voice: .alloy,
+        audioFormat: .pcm16,
+        turnDetection: .automatic(.speakerOptimized),
+        enableTranscription: true,
+        startAudioAutomatically: true,
+        defaultAudioOutput: .smart,
+        echoProtection: .default,
+        inputAudioConfiguration: .farField
     )
 }

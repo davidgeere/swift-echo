@@ -5,6 +5,141 @@ All notable changes to Echo will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2025-12-10
+
+### Added
+
+#### Echo Protection for Speaker Mode
+Prevents the AI assistant from interrupting itself when using speaker output, while still allowing genuine user barge-in (interruptions). This is a multi-layered solution combining server-side and client-side protections.
+
+##### Server-Side Features
+- **Semantic VAD with eagerness control** - Uses meaning-based speech detection instead of just volume
+  - `VADConfiguration.Eagerness` enum: `.low`, `.medium`, `.high`
+  - Low eagerness waits longer before deciding user finished speaking (filters echo)
+  - Semantic VAD understands conversational context, not just audio levels
+
+- **Noise reduction configuration** - Server-side audio filtering
+  - `InputAudioConfiguration` with `NoiseReductionType`
+  - `.nearField` - For earpiece/receiver mode (close to mic)
+  - `.farField` - For speaker mode (better echo handling)
+
+- **VAD response control** - New properties actually sent to API
+  - `createResponse: Bool` - Whether to auto-create response when user stops
+  - `interruptResponse: Bool` - Whether user can interrupt assistant
+
+##### Client-Side Features
+- **Audio gating** - Filters low-level audio during assistant speech
+  - `EchoProtectionConfiguration` with `bargeInThreshold` (0.0-1.0)
+  - Only audio above threshold passes through when assistant is speaking
+  - `postSpeechDelay` - Delay after assistant stops before disabling gate
+
+- **Automatic VAD switching** - Adjusts VAD based on audio output device
+  - Speaker → Semantic VAD with low eagerness
+  - Earpiece/Headphones → Server VAD with higher sensitivity
+  - Bluetooth → Semantic VAD with medium eagerness
+
+##### Smart Audio Output
+- **`.smart` case for AudioOutputDeviceType** - Intelligent device selection
+  - Uses Bluetooth if connected
+  - Falls back to speaker with echo protection
+  - Best for voice conversation apps
+
+- **`mayProduceEcho` property** - Identifies echo-prone outputs
+  - Returns `true` for speaker, Bluetooth (conservative)
+  - Returns `false` for earpiece, wired headphones
+
+#### New Configuration Types
+
+##### VADConfiguration Updates
+```swift
+VADConfiguration(
+    type: .semanticVAD,
+    eagerness: .low,        // NEW: Controls response speed
+    threshold: 0.7,
+    silenceDurationMs: 500,
+    prefixPaddingMs: 300,
+    interruptResponse: true, // NEW: Actually sent to API now
+    createResponse: true     // NEW: Controls auto-response
+)
+```
+
+##### InputAudioConfiguration (NEW)
+```swift
+// Server-side noise reduction
+let config = InputAudioConfiguration(noiseReductionType: .farField)
+
+// Presets
+InputAudioConfiguration.nearField      // For earpiece
+InputAudioConfiguration.farField       // For speaker (echo protection)
+InputAudioConfiguration.disabled       // No noise reduction
+```
+
+##### EchoProtectionConfiguration (NEW)
+```swift
+// Client-side audio gating
+let config = EchoProtectionConfiguration(
+    enabled: true,
+    bargeInThreshold: 0.15,  // RMS level for barge-in
+    postSpeechDelay: .milliseconds(300)
+)
+
+// Presets
+EchoProtectionConfiguration.default     // Balanced
+EchoProtectionConfiguration.aggressive  // High volume environments
+EchoProtectionConfiguration.disabled    // For earpiece/headphones
+```
+
+#### New Presets
+
+##### VADConfiguration Presets
+- `.speakerOptimized` - Semantic VAD with low eagerness
+- `.earpiece` - Server VAD with high eagerness
+- `.bluetooth` - Semantic VAD with medium eagerness
+
+##### EchoConfiguration Preset
+```swift
+// Full speaker-optimized setup
+let config = EchoConfiguration.speakerOptimized
+// Includes: smart audio output, far-field noise reduction,
+// echo protection, and speaker-optimized VAD
+```
+
+##### RealtimeClientConfiguration Preset
+```swift
+let config = RealtimeClientConfiguration.speakerOptimized
+```
+
+#### Example Usage
+```swift
+// Simple: Use the speaker-optimized preset
+let config = EchoConfiguration.speakerOptimized
+let echo = Echo(key: apiKey, configuration: config)
+let conversation = try await echo.startConversation(mode: .audio)
+
+// Custom: Fine-tuned echo protection
+let config = EchoConfiguration(
+    defaultMode: .audio,
+    defaultAudioOutput: .smart,
+    inputAudioConfiguration: .farField,
+    echoProtection: .aggressive,
+    turnDetection: .automatic(.speakerOptimized)
+)
+```
+
+### Fixed
+- **VAD `enableInterruption` not sent to API** - Property was defined but never included in `toRealtimeFormat()`. Now properly sent as `interrupt_response`.
+
+### Technical
+- New `InputAudioConfiguration.swift` for server-side noise reduction
+- New `EchoProtectionConfiguration.swift` for client-side gating
+- Updated `VADConfiguration.swift` with proper semantic VAD serialization
+- Updated `AudioCapture.swift` with gating support via `OSAllocatedUnfairLock`
+- Updated `RealtimeClient.swift` with echo protection logic
+- Updated `AudioOutputDeviceType.swift` with `.smart` case
+- 31 new tests in `EchoProtectionTests.swift`
+
+---
+
 ## [1.5.0] - 2025-12-06
 
 ### Added
@@ -542,6 +677,7 @@ Echo is a unified Swift library for OpenAI's Realtime API (WebSocket-based voice
 
 ## Version History
 
+- **1.6.0** - Echo protection for speaker mode
 - **1.5.0** - Audio frequency analysis and level monitoring
 - **1.4.0** - Audio engine exposure for external monitoring (Issue #8)
 - **1.3.0** - Architecture refactor: Event decoupling
@@ -562,6 +698,7 @@ This project follows [Semantic Versioning](https://semver.org/):
 - **MINOR** version for backwards-compatible functionality additions
 - **PATCH** version for backwards-compatible bug fixes
 
+[1.6.0]: https://github.com/davidgeere/swift-echo/releases/tag/v1.6.0
 [1.5.0]: https://github.com/davidgeere/swift-echo/releases/tag/v1.5.0
 [1.4.0]: https://github.com/davidgeere/swift-echo/releases/tag/v1.4.0
 [1.3.0]: https://github.com/davidgeere/swift-echo/releases/tag/v1.3.0

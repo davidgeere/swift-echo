@@ -22,7 +22,26 @@ public protocol AudioCaptureProtocol: Actor {
 
     /// Stream of audio levels for visualization including frequency bands
     var audioLevelStream: AsyncStream<AudioLevels> { get }
-    
+
     /// Whether audio is currently being captured
     var isActive: Bool { get }
+
+    // MARK: - Echo Protection Gating
+
+    /// Enables audio gating for echo protection
+    ///
+    /// When gating is enabled, only audio chunks with RMS level above the threshold
+    /// will be forwarded to the callback. This helps filter out echo (quieter) while
+    /// allowing genuine user speech (louder) to pass through.
+    ///
+    /// - Parameter threshold: RMS level threshold (0.0-1.0). Audio below this level is filtered.
+    func enableGating(threshold: Float) async
+
+    /// Disables audio gating
+    ///
+    /// All captured audio will be forwarded to the callback regardless of level.
+    func disableGating() async
+
+    /// Whether audio gating is currently enabled
+    var isGatingEnabled: Bool { get }
 }
