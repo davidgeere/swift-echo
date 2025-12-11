@@ -283,6 +283,18 @@ public actor AudioPlayback: AudioPlaybackProtocol {
             // Allow system to route to Bluetooth/wired/earpiece
             // Remove speaker override to allow default routing
             portOverride = .none
+            
+        case .smart:
+            // Smart mode: Use Bluetooth if available, otherwise speaker with echo protection
+            let bluetoothConnected = availableAudioOutputDevices.contains { $0.isBluetooth }
+            if bluetoothConnected {
+                // Bluetooth is available, let system route to it
+                portOverride = .none
+            } else {
+                // No Bluetooth, use speaker
+                options.insert(.defaultToSpeaker)
+                portOverride = .speaker
+            }
         }
         
         // CRITICAL FIX: Stop engines BEFORE route change to prevent route caching
