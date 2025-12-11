@@ -5,6 +5,19 @@ All notable changes to Echo will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] - 2025-12-10
+
+### Fixed
+
+#### AudioPlayback Switch Statement (#17)
+- **Fixed switch not exhaustive error** - Added missing `.smart` case to `setAudioOutput()` method
+  - If Bluetooth device is connected → routes to Bluetooth
+  - If no Bluetooth → routes to speaker with echo protection
+- `.smart` can now be used as `defaultAudioOutput` in `EchoConfiguration`
+- `EchoConfiguration.speakerOptimized` preset now works correctly
+
+---
+
 ## [1.6.0] - 2025-12-10
 
 ### Added
@@ -677,6 +690,7 @@ Echo is a unified Swift library for OpenAI's Realtime API (WebSocket-based voice
 
 ## Version History
 
+- **1.6.1** - Fix: Add missing .smart case to AudioPlayback
 - **1.6.0** - Echo protection for speaker mode
 - **1.5.0** - Audio frequency analysis and level monitoring
 - **1.4.0** - Audio engine exposure for external monitoring (Issue #8)
@@ -698,6 +712,7 @@ This project follows [Semantic Versioning](https://semver.org/):
 - **MINOR** version for backwards-compatible functionality additions
 - **PATCH** version for backwards-compatible bug fixes
 
+[1.6.1]: https://github.com/davidgeere/swift-echo/releases/tag/v1.6.1
 [1.6.0]: https://github.com/davidgeere/swift-echo/releases/tag/v1.6.0
 [1.5.0]: https://github.com/davidgeere/swift-echo/releases/tag/v1.5.0
 [1.4.0]: https://github.com/davidgeere/swift-echo/releases/tag/v1.4.0

@@ -11,7 +11,7 @@ import Foundation
 /// Echo library version information
 public enum EchoVersion {
     /// Current version of the Echo library
-    public static let current = Version(major: 1, minor: 6, patch: 0)
+    public static let current = Version(major: 1, minor: 6, patch: 1)
     
     /// Version string (e.g., "1.0.0")
     public static var string: String {
@@ -81,6 +81,23 @@ public struct BuildInfo: Sendable {
 extension EchoVersion {
     /// Version history with release notes
     public static let history: [(version: Version, date: String, notes: String)] = [
+        (
+            version: Version(major: 1, minor: 6, patch: 1),
+            date: "2025-12-10",
+            notes: """
+            🔧 Fix: Add missing .smart case to AudioPlayback
+            
+            Bug Fix:
+            • Fixed switch statement in AudioPlayback.setAudioOutput() not being exhaustive
+            • Added .smart case that checks for Bluetooth availability
+            • If Bluetooth connected, routes to Bluetooth device
+            • If no Bluetooth, routes to speaker with echo protection
+            
+            Impact:
+            • .smart can now be used as defaultAudioOutput in EchoConfiguration
+            • EchoConfiguration.speakerOptimized now works correctly
+            """
+        ),
         (
             version: Version(major: 1, minor: 6, patch: 0),
             date: "2025-12-10",
