@@ -24,6 +24,20 @@ public struct EchoConfiguration: Sendable {
     /// Voice type for text-to-speech.
     public let voice: VoiceType
 
+    /// Default audio output device for audio conversations.
+    /// Set to `.smart` for automatic Bluetooth/speaker selection.
+    /// Set to `.builtInSpeaker` for always speaker.
+    /// Set to `.builtInReceiver` for always earpiece.
+    /// Set to `nil` to use system default.
+    public let defaultAudioOutput: AudioOutputDeviceType?
+
+    /// Input audio configuration including server-side noise reduction.
+    public let inputAudioConfiguration: InputAudioConfiguration?
+
+    /// Echo protection configuration for speaker mode.
+    /// Enables client-side audio gating to prevent self-interruption.
+    public let echoProtection: EchoProtectionConfiguration?
+
     // MARK: - Turn Detection
 
     /// Turn detection configuration for audio mode.
@@ -38,7 +52,7 @@ public struct EchoConfiguration: Sendable {
 
     /// Maximum tokens for response generation.
     public let maxTokens: Int?
-    
+
     /// Reasoning effort level for controlling depth of model reasoning
     /// Set to .none to minimize reasoning output, or .high for complex problems
     public let reasoningEffort: ReasoningEffort
@@ -70,6 +84,9 @@ public struct EchoConfiguration: Sendable {
     ///   - responsesModel: Model for text mode (default: .gpt5)
     ///   - audioFormat: Audio format (default: .pcm16)
     ///   - voice: Voice type (default: .alloy)
+    ///   - defaultAudioOutput: Default audio output device (default: nil for system default)
+    ///   - inputAudioConfiguration: Input audio configuration including noise reduction (default: nil)
+    ///   - echoProtection: Echo protection for speaker mode (default: nil)
     ///   - turnDetection: Turn detection mode (default: automatic with standard settings)
     ///   - temperature: Sampling temperature (default: 0.8)
     ///   - maxTokens: Maximum response tokens (default: nil for unlimited)
@@ -83,6 +100,9 @@ public struct EchoConfiguration: Sendable {
         responsesModel: ResponsesModel = .gpt5,
         audioFormat: AudioFormat = .pcm16,
         voice: VoiceType = .alloy,
+        defaultAudioOutput: AudioOutputDeviceType? = nil,
+        inputAudioConfiguration: InputAudioConfiguration? = nil,
+        echoProtection: EchoProtectionConfiguration? = nil,
         turnDetection: TurnDetection? = .default,
         temperature: Double = 0.8,
         maxTokens: Int? = nil,
@@ -96,6 +116,9 @@ public struct EchoConfiguration: Sendable {
         self.responsesModel = responsesModel
         self.audioFormat = audioFormat
         self.voice = voice
+        self.defaultAudioOutput = defaultAudioOutput
+        self.inputAudioConfiguration = inputAudioConfiguration
+        self.echoProtection = echoProtection
         self.turnDetection = turnDetection
         self.temperature = temperature
         self.maxTokens = maxTokens
@@ -107,6 +130,17 @@ public struct EchoConfiguration: Sendable {
 
     /// Default configuration with sensible defaults.
     public static let `default` = EchoConfiguration()
+
+    /// Speaker-optimized configuration with echo protection.
+    /// Uses smart audio output (Bluetooth if available, otherwise speaker).
+    /// Includes semantic VAD, noise reduction, and client-side echo gating.
+    public static let speakerOptimized = EchoConfiguration(
+        defaultMode: .audio,
+        defaultAudioOutput: .smart,
+        inputAudioConfiguration: .farField,
+        echoProtection: .default,
+        turnDetection: .automatic(.speakerOptimized)
+    )
 
     // MARK: - Conversions
 
@@ -121,7 +155,10 @@ public struct EchoConfiguration: Sendable {
             enableTranscription: enableTranscription,
             startAudioAutomatically: true,
             temperature: temperature,
-            maxOutputTokens: maxTokens
+            maxOutputTokens: maxTokens,
+            defaultAudioOutput: defaultAudioOutput,
+            echoProtection: echoProtection,
+            inputAudioConfiguration: inputAudioConfiguration
         )
     }
 }

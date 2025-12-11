@@ -11,7 +11,7 @@ import Foundation
 /// Echo library version information
 public enum EchoVersion {
     /// Current version of the Echo library
-    public static let current = Version(major: 1, minor: 5, patch: 0)
+    public static let current = Version(major: 1, minor: 6, patch: 0)
     
     /// Version string (e.g., "1.0.0")
     public static var string: String {
@@ -25,7 +25,7 @@ public enum EchoVersion {
     
     /// Build information
     public static let build = BuildInfo(
-        date: "2025-12-06",
+        date: "2025-12-10",
         commit: "main"
     )
 }
@@ -81,6 +81,52 @@ public struct BuildInfo: Sendable {
 extension EchoVersion {
     /// Version history with release notes
     public static let history: [(version: Version, date: String, notes: String)] = [
+        (
+            version: Version(major: 1, minor: 6, patch: 0),
+            date: "2025-12-10",
+            notes: """
+            🔊 Echo Protection for Speaker Mode
+            
+            Prevents the AI assistant from interrupting itself when using speaker output,
+            while still allowing genuine user barge-in (interruptions).
+            
+            New Features:
+            • Semantic VAD with eagerness control (low/medium/high)
+            • Server-side noise reduction (near_field/far_field)
+            • Client-side audio gating for echo protection
+            • Automatic VAD switching based on audio output device
+            • Smart audio output selection (Bluetooth if available, otherwise speaker)
+            
+            New Configuration Types:
+            • VADConfiguration.Eagerness - Controls semantic VAD response speed
+            • InputAudioConfiguration - Server-side noise reduction settings
+            • EchoProtectionConfiguration - Client-side audio gating settings
+            
+            VADConfiguration Updates:
+            • Added eagerness property for semantic VAD
+            • Added createResponse and interruptResponse properties
+            • Fixed: enableInterruption was defined but never sent to API
+            • New presets: .speakerOptimized, .earpiece, .bluetooth
+            
+            AudioOutputDeviceType Updates:
+            • New .smart case for automatic device selection
+            • New mayProduceEcho property to identify echo-prone outputs
+            
+            EchoConfiguration Updates:
+            • New defaultAudioOutput property
+            • New inputAudioConfiguration property
+            • New echoProtection property
+            • New .speakerOptimized preset
+            
+            RealtimeClientConfiguration Updates:
+            • New defaultAudioOutput, echoProtection, inputAudioConfiguration properties
+            • New .speakerOptimized preset
+            
+            Testing:
+            • 31 new tests in EchoProtectionTests.swift
+            • All unit tests pass (106 tests)
+            """
+        ),
         (
             version: Version(major: 1, minor: 5, patch: 0),
             date: "2025-12-06",

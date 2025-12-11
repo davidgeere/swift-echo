@@ -4,19 +4,20 @@ A unified Swift library for OpenAI's Realtime API (WebSocket-based voice) and Ch
 
 [![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
 [![Platform](https://img.shields.io/badge/platform-iOS%2018%20|%20macOS%2014-blue.svg)](https://developer.apple.com)
-[![Version](https://img.shields.io/badge/version-1.5.0-brightgreen.svg)](https://github.com/davidgeere/swift-echo/releases)
+[![Version](https://img.shields.io/badge/version-1.6.0-brightgreen.svg)](https://github.com/davidgeere/swift-echo/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 ## 🚀 Latest Updates
 
-**Echo v1.5.0** adds FFT-based audio frequency analysis with real-time level monitoring:
+**Echo v1.6.0** adds Echo Protection for speaker mode:
 
-- **Audio Frequency Analysis**: Get low/mid/high frequency bands using Accelerate framework FFT
-- **Input Level Monitoring**: Observable `inputLevels` property with frequency bands for microphone
-- **Output Level Monitoring**: Observable `outputLevels` property with frequency bands for speaker
-- **New Events**: `inputLevelsChanged` and `outputLevelsChanged` events for visualizations
+- **Semantic VAD**: Meaning-based speech detection with eagerness control (low/medium/high)
+- **Server-Side Noise Reduction**: Near-field and far-field modes for echo filtering
+- **Client-Side Audio Gating**: Filters low-level audio during assistant speech
+- **Automatic VAD Switching**: Adjusts settings based on audio output device
+- **Smart Audio Output**: `.smart` device type auto-selects Bluetooth or speaker with protection
 
-**Echo v1.4.0** exposed `AVAudioEngine` for external audio monitoring and custom tap installation.
+**Echo v1.5.0** added FFT-based audio frequency analysis with real-time level monitoring.
 
 [View changelog →](CHANGELOG.md)
 
@@ -38,7 +39,7 @@ Add Echo to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/davidgeere/swift-echo.git", from: "1.5.0")
+    .package(url: "https://github.com/davidgeere/swift-echo.git", from: "1.6.0")
 ]
 ```
 
@@ -113,6 +114,96 @@ Task {
 // Control mute state
 conversation.setMuted(true)   // Mute microphone
 conversation.setMuted(false)  // Unmute microphone
+```
+
+### 🔊 Echo Protection for Speaker Mode
+
+When using speaker output, the AI can hear itself and interrupt its own responses. Echo v1.6.0 solves this with a multi-layered approach:
+
+```swift
+// Simple: Use the speaker-optimized preset
+let config = EchoConfiguration.speakerOptimized
+let echo = Echo(key: apiKey, configuration: config)
+
+// This preset includes:
+// - Semantic VAD with low eagerness (waits longer before responding)
+// - Far-field noise reduction (filters speaker echo)
+// - Client-side audio gating (blocks low-level sounds during speech)
+// - Smart audio output (Bluetooth if available, speaker otherwise)
+```
+
+#### Custom Echo Protection
+
+```swift
+// Fine-tune echo protection for your environment
+let config = EchoConfiguration(
+    defaultMode: .audio,
+    defaultAudioOutput: .smart,  // Auto-select best device
+    inputAudioConfiguration: .farField,  // Server-side noise reduction
+    echoProtection: EchoProtectionConfiguration(
+        bargeInThreshold: 0.15,  // RMS level to allow interruption
+        postSpeechDelay: .milliseconds(300)  // Delay after speech ends
+    ),
+    turnDetection: .automatic(.speakerOptimized)  // Semantic VAD
+)
+
+let echo = Echo(key: apiKey, configuration: config)
+```
+
+#### Semantic VAD with Eagerness Control
+
+Semantic VAD uses meaning-based detection instead of just volume:
+
+```swift
+// Low eagerness: Waits longer, best for speaker mode
+let speakerVAD = VADConfiguration(
+    type: .semanticVAD,
+    eagerness: .low,
+    interruptResponse: true,
+    createResponse: true
+)
+
+// High eagerness: Responds quickly, good for earpiece/headphones
+let earpieceVAD = VADConfiguration(
+    type: .serverVAD,
+    threshold: 0.5,
+    silenceDurationMs: 500,
+    prefixPaddingMs: 300
+)
+
+let config = EchoConfiguration(
+    turnDetection: .automatic(speakerVAD)
+)
+```
+
+#### Understanding Echo Protection Presets
+
+| Preset | Use Case | VAD Type | Eagerness | Noise Reduction |
+|--------|----------|----------|-----------|-----------------|
+| `.speakerOptimized` | Speaker output | Semantic | Low | Far-field |
+| `.earpiece` | Earpiece/receiver | Server | High | Near-field |
+| `.bluetooth` | Bluetooth devices | Semantic | Medium | Far-field |
+| `.default` | General use | Server | Medium | Near-field |
+
+#### Audio Output Device Selection
+
+Echo automatically adjusts VAD settings based on the output device:
+
+```swift
+// Speaker mode - enables echo protection automatically
+try await conversation.setAudioOutput(device: .builtInSpeaker)
+
+// Earpiece mode - uses faster VAD response
+try await conversation.setAudioOutput(device: .builtInReceiver)
+
+// Smart mode - Bluetooth if available, speaker with protection otherwise
+try await conversation.setAudioOutput(device: .smart)
+
+// Check if current device may produce echo
+let current = await conversation.currentAudioOutput
+if current.mayProduceEcho {
+    // Speaker or Bluetooth - echo protection active
+}
 ```
 
 ### 📊 Audio Level Monitoring
@@ -463,15 +554,23 @@ let configuration = EchoConfiguration(
     maxTokens: 2000,
     voice: .alloy,                        // Voice selection
     audioFormat: .pcm16,                  // Audio format
+    defaultAudioOutput: .smart,           // Smart device selection
+    inputAudioConfiguration: .farField,   // Noise reduction mode
+    echoProtection: .default,             // Client-side echo gating
     turnDetection: .automatic(            // Voice activity detection
         VADConfiguration(
-            threshold: 0.5,
-            silenceDuration: .milliseconds(500)
+            type: .semanticVAD,
+            eagerness: .low,
+            interruptResponse: true,
+            createResponse: true
         )
     )
 )
 
 let echo = Echo(key: apiKey, configuration: configuration)
+
+// Or use a preset for common scenarios
+let speakerConfig = EchoConfiguration.speakerOptimized
 ```
 
 ### 🎙️ Turn Detection Modes
@@ -479,13 +578,30 @@ let echo = Echo(key: apiKey, configuration: configuration)
 Configure how voice conversations detect when users stop speaking:
 
 ```swift
-// Automatic (VAD) - Recommended
-// AI automatically responds when it detects silence
-let vadConfig = VADConfiguration(
+// Server VAD - Volume-based detection
+// Good for earpiece/headphones where echo isn't an issue
+let serverVAD = VADConfiguration(
+    type: .serverVAD,
     threshold: 0.5,
-    silenceDuration: .milliseconds(500)
+    silenceDurationMs: 500,
+    prefixPaddingMs: 300,
+    interruptResponse: true,
+    createResponse: true
 )
-configuration.turnDetection = .automatic(vadConfig)
+
+// Semantic VAD - Meaning-based detection (NEW in 1.6.0)
+// Good for speaker mode - understands conversational context
+let semanticVAD = VADConfiguration(
+    type: .semanticVAD,
+    eagerness: .low,      // .low, .medium, or .high
+    interruptResponse: true,
+    createResponse: true
+)
+
+// Use presets for common scenarios
+configuration.turnDetection = .automatic(.speakerOptimized)  // Semantic, low eagerness
+configuration.turnDetection = .automatic(.earpiece)          // Server VAD, high eagerness
+configuration.turnDetection = .automatic(.bluetooth)         // Semantic, medium eagerness
 
 // Manual - You control when turns end
 // Call conversation.endUserTurn() to trigger response
@@ -494,6 +610,14 @@ configuration.turnDetection = .manual
 // Disabled - No turn management
 configuration.turnDetection = .disabled
 ```
+
+#### VAD Eagerness Levels
+
+| Eagerness | Behavior | Best For |
+|-----------|----------|----------|
+| `.low` | Waits longer before responding | Speaker mode, noisy environments |
+| `.medium` | Balanced response time | Bluetooth, general use |
+| `.high` | Responds quickly | Earpiece, quiet environments |
 
 ## 🎯 More Examples
 

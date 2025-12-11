@@ -310,6 +310,7 @@ struct AudioLifecycleEventTests {
             let audioLevelStream: AsyncStream<AudioLevels>
             private let levelContinuation: AsyncStream<AudioLevels>.Continuation
             var isActive: Bool = false
+            var isGatingEnabled: Bool = false
             
             init() {
                 var continuation: AsyncStream<AudioLevels>.Continuation?
@@ -330,6 +331,8 @@ struct AudioLifecycleEventTests {
             func stop() async {}
             func pause() async {}
             func resume() async throws {}
+            func enableGating(threshold: Float) async { isGatingEnabled = true }
+            func disableGating() async { isGatingEnabled = false }
         }
         
         // Create RealtimeClient with failing mock audio capture
