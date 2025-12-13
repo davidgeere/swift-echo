@@ -11,7 +11,7 @@ import Foundation
 /// Echo library version information
 public enum EchoVersion {
     /// Current version of the Echo library
-    public static let current = Version(major: 1, minor: 7, patch: 1)
+    public static let current = Version(major: 1, minor: 8, patch: 0)
     
     /// Version string (e.g., "1.0.0")
     public static var string: String {
@@ -25,7 +25,7 @@ public enum EchoVersion {
     
     /// Build information
     public static let build = BuildInfo(
-        date: "2025-12-12",
+        date: "2025-12-13",
         commit: "main"
     )
 }
@@ -81,6 +81,40 @@ public struct BuildInfo: Sendable {
 extension EchoVersion {
     /// Version history with release notes
     public static let history: [(version: Version, date: String, notes: String)] = [
+        (
+            version: Version(major: 1, minor: 8, patch: 0),
+            date: "2025-12-13",
+            notes: """
+            🌐 WebRTC Transport Layer
+            
+            New Features:
+            • WebRTC transport as alternative to WebSocket
+            • Native audio tracks - no base64 encoding overhead
+            • Lower latency with direct peer connection
+            • Built-in hardware echo cancellation via WebRTC
+            • RTCDataChannel for events (same format as WebSocket)
+            • Automatic ephemeral key handling (invisible to developer)
+            
+            New Types:
+            • WebRTCTransport - Full WebRTC implementation
+            • WebRTCSessionManager - Ephemeral key & SDP exchange
+            • WebRTCAudioHandler - Audio session & track management
+            • RealtimeTransportType enum (.webSocket, .webRTC)
+            
+            Configuration:
+            • EchoConfiguration.transportType - Select transport layer
+            • Just add `transportType: .webRTC` - everything else stays the same
+            • Same API, same events, same transcriptions
+            
+            Dependencies:
+            • Added stasel/WebRTC (v126.0.0) - Google WebRTC framework for Swift
+            
+            Architecture:
+            • RealtimeTransportProtocol - Abstracts WebSocket/WebRTC
+            • WebSocketTransport - Refactored from WebSocketManager
+            • Seamless switching between transports
+            """
+        ),
         (
             version: Version(major: 1, minor: 7, patch: 1),
             date: "2025-12-12",
