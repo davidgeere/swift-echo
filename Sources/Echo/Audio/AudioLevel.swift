@@ -27,7 +27,7 @@ public struct AudioLevel {
         // Calculate RMS
         var sum: Double = 0.0
         for sample in samples {
-            let normalized = Double(sample) / Double(Int16.max)
+            let normalized = Double(sample) / 32768.0
             sum += normalized * normalized
         }
 
@@ -53,7 +53,7 @@ public struct AudioLevel {
         }
 
         let maxSample = samples.map(abs).max() ?? 0
-        return Double(maxSample) / Double(Int16.max)
+        return Double(maxSample) / 32768.0
     }
 
     /// Calculates audio level from an AVAudioPCMBuffer
@@ -68,7 +68,7 @@ public struct AudioLevel {
 
         var sum: Double = 0.0
         for sample in samples {
-            let normalized = Double(sample) / Double(Int16.max)
+            let normalized = Double(sample) / 32768.0
             sum += normalized * normalized
         }
 
