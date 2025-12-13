@@ -210,7 +210,10 @@ public struct VADConfiguration: Sendable {
         switch type {
         case .serverVAD:
             // Server VAD uses threshold, silence duration, and prefix padding
-            config["threshold"] = threshold
+            // Round threshold to 6 decimal places to avoid floating-point precision issues
+            // (OpenAI API rejects values with more than 16 decimal places)
+            let roundedThreshold = (threshold * 1_000_000).rounded() / 1_000_000
+            config["threshold"] = roundedThreshold
             config["silence_duration_ms"] = silenceDurationMs
             config["prefix_padding_ms"] = prefixPaddingMs
 
