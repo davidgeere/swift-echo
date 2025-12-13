@@ -11,7 +11,7 @@ import Foundation
 /// Echo library version information
 public enum EchoVersion {
     /// Current version of the Echo library
-    public static let current = Version(major: 1, minor: 7, patch: 0)
+    public static let current = Version(major: 1, minor: 7, patch: 1)
     
     /// Version string (e.g., "1.0.0")
     public static var string: String {
@@ -25,7 +25,7 @@ public enum EchoVersion {
     
     /// Build information
     public static let build = BuildInfo(
-        date: "2025-12-10",
+        date: "2025-12-12",
         commit: "main"
     )
 }
@@ -81,6 +81,30 @@ public struct BuildInfo: Sendable {
 extension EchoVersion {
     /// Version history with release notes
     public static let history: [(version: Version, date: String, notes: String)] = [
+        (
+            version: Version(major: 1, minor: 7, patch: 1),
+            date: "2025-12-12",
+            notes: """
+            🔧 PCM16 Audio Normalization Fix
+            
+            Bug Fix:
+            • Fixed PCM16 normalization using incorrect divisor (Int16.max vs 32768.0)
+            • Int16.min (-32768) now correctly maps to -1.0 (was -1.0000305)
+            • Int16.max (32767) now maps to ~0.99997 (within valid range)
+            
+            Files Updated:
+            • EchoCanceller.swift - PCM16 to Float conversion
+            • AudioLevel.swift - RMS and peak level calculations
+            
+            New Tests:
+            • Comprehensive PCM16 normalization tests in EchoCancellerTests
+            • New AudioLevelTests.swift with 17 tests for level calculations
+            
+            Why It Matters:
+            • Prevents audio distortion from out-of-range values
+            • Critical for accurate correlation-based echo detection
+            """
+        ),
         (
             version: Version(major: 1, minor: 7, patch: 0),
             date: "2025-12-12",

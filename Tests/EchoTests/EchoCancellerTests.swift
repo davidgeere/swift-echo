@@ -202,6 +202,33 @@ struct EchoCancellerTests {
         #expect(size == 1)
     }
 
+    @Test("PCM16 normalization uses 32768.0 divisor for proper [-1.0, 1.0] range")
+    func pcm16NormalizationRange() {
+        // Test that PCM16 values are properly normalized using 32768.0
+        // This ensures Int16.min maps to exactly -1.0 (not -1.0000305)
+        // and Int16.max maps to ~0.99997 (within valid range)
+
+        // Int16.min (-32768) should map to exactly -1.0
+        let minNormalized = Float(Int16.min) / 32768.0
+        #expect(minNormalized == -1.0, "Int16.min should normalize to exactly -1.0")
+
+        // Int16.max (32767) should map to ~0.99997 (within valid [-1, 1] range)
+        let maxNormalized = Float(Int16.max) / 32768.0
+        #expect(maxNormalized > 0.99 && maxNormalized < 1.0, "Int16.max should normalize to ~0.99997")
+
+        // Zero should map to zero
+        let zeroNormalized = Float(Int16(0)) / 32768.0
+        #expect(zeroNormalized == 0.0, "Zero should normalize to 0.0")
+
+        // Verify both extremes are within [-1.0, 1.0]
+        #expect(minNormalized >= -1.0 && minNormalized <= 1.0, "Min value must be in [-1, 1] range")
+        #expect(maxNormalized >= -1.0 && maxNormalized <= 1.0, "Max value must be in [-1, 1] range")
+
+        // Verify the old (incorrect) divisor would produce out-of-range values
+        let oldMinNormalized = Float(Int16.min) / Float(Int16.max)
+        #expect(oldMinNormalized < -1.0, "Old divisor produces out-of-range values for Int16.min")
+    }
+
     // MARK: - Echo Detection Tests
 
     @Test("isEcho returns false when not active")

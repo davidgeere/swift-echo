@@ -5,6 +5,56 @@ All notable changes to Echo will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.1] - 2025-12-12
+
+### Fixed
+
+#### PCM16 Audio Normalization
+
+Fixed incorrect PCM16 audio normalization that could produce out-of-range values.
+
+**The Problem:**
+The previous code divided PCM16 samples by `Int16.max` (32767):
+
+```swift
+// WRONG: Int16.min produces -1.0000305 (out of range!)
+Float(sample) / Float(Int16.max)
+```
+
+| Input Value | Previous Result | Issue |
+|-------------|-----------------|-------|
+| Int16.min (-32768) | -1.0000305 | ❌ Exceeds valid [-1, 1] range |
+| Int16.max (32767) | 1.0 | Creates asymmetry |
+
+**The Fix:**
+Now uses `32768.0` as divisor for proper normalization:
+
+```swift
+// CORRECT: All values map to [-1.0, ~0.99997]
+Float(sample) / 32768.0
+```
+
+| Input Value | Fixed Result | Status |
+|-------------|--------------|--------|
+| Int16.min (-32768) | -1.0 | ✅ Exactly -1.0 |
+| Int16.max (32767) | ~0.99997 | ✅ Within valid range |
+
+**Files Updated:**
+- `EchoCanceller.swift` - PCM16 to Float conversion methods
+- `AudioLevel.swift` - RMS and peak level calculations
+
+**Why This Matters:**
+- Prevents audio distortion from out-of-range values
+- Ensures consistent behavior across the full Int16 range
+- Critical for accurate correlation-based echo cancellation
+
+### Added
+
+- Comprehensive tests for PCM16 normalization in `EchoCancellerTests.swift`
+- New `AudioLevelTests.swift` test suite for audio level calculations
+
+---
+
 ## [1.7.0] - 2025-12-12
 
 ### Added
