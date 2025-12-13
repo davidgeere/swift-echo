@@ -25,7 +25,7 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
     // MARK: - Properties
     
     private let sessionManager: WebRTCSessionManager
-    private let audioHandler: WebRTCAudioHandler
+    public let audioHandler: WebRTCAudioHandler
     
     private var _isConnected: Bool = false
     private var isIntentionalDisconnect: Bool = false

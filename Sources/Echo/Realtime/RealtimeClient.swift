@@ -436,6 +436,16 @@ public actor RealtimeClient: TurnManagerDelegate {
     /// - Parameter muted: Whether to mute the microphone
     /// - Throws: RealtimeError if audio capture is not active
     public func setMuted(_ muted: Bool) async throws {
+        // #region agent log SOLVE-3
+        print("[DEBUG-SOLVE-3] 🔧 setMuted called, muted=\(muted), handlesAudioNatively=\(await transport.handlesAudioNatively)")
+        // #endregion
+        
+        // SOLVE-3: Route through WebRTC transport when it handles audio natively
+        if await transport.handlesAudioNatively {
+            await transport.setLocalAudioMuted(muted)
+            return
+        }
+        
         guard let capture = audioCapture else {
             throw RealtimeError.audioCaptureFailed(
                 NSError(domain: "RealtimeClient", code: -1, userInfo: [
@@ -455,6 +465,21 @@ public actor RealtimeClient: TurnManagerDelegate {
     /// - Parameter device: The audio output device to use
     /// - Throws: RealtimeError if audio playback is not active
     public func setAudioOutput(device: AudioOutputDeviceType) async throws {
+        // #region agent log SOLVE-3
+        print("[DEBUG-SOLVE-3] 🔧 setAudioOutput called, device=\(device), handlesAudioNatively=\(await transport.handlesAudioNatively)")
+        // #endregion
+        
+        // SOLVE-3: Route through WebRTC audio handler when it handles audio natively
+        if await transport.handlesAudioNatively {
+            // WebRTC handles audio through its own audio session
+            // Use the WebRTCAudioHandler to change output device
+            if let webrtcTransport = transport as? WebRTCTransport {
+                try await webrtcTransport.audioHandler.setAudioOutput(device: device)
+                await eventEmitter.emit(.audioOutputChanged(device: device))
+            }
+            return
+        }
+        
         guard let playback = audioPlayback else {
             throw RealtimeError.audioPlaybackFailed(
                 NSError(domain: "RealtimeClient", code: -2, userInfo: [
