@@ -126,9 +126,23 @@ public actor WebRTCSessionManager {
                 session["instructions"] = instructions
             }
             
+            // #region agent log SOLVE-1
+            print("[DEBUG-SOLVE-1] 🔧 toJSON() called - applying threshold fix")
+            // #endregion
+            
             if let turnDetectionJSON = turnDetectionJSON,
                let turnDetectionData = turnDetectionJSON.data(using: .utf8),
-               let turnDetection = try? JSONSerialization.jsonObject(with: turnDetectionData) as? [String: Any] {
+               var turnDetection = try? JSONSerialization.jsonObject(with: turnDetectionData) as? [String: Any] {
+                
+                // H6 FIX: JSONSerialization.jsonObject converts 0.7 back to Double!
+                // Re-apply Decimal conversion here too
+                if let threshold = turnDetection["threshold"] as? Double {
+                    let formattedString = String(format: "%.2f", threshold)
+                    let decimalThreshold = Decimal(string: formattedString) ?? Decimal(threshold)
+                    turnDetection["threshold"] = decimalThreshold
+                    print("[DEBUG-SOLVE-1] 🔧 Fixed threshold in toJSON: \(threshold) → \(decimalThreshold)")
+                }
+                
                 if var inputAudio = session["audio"] as? [String: Any],
                    var input = inputAudio["input"] as? [String: Any] {
                     input["turn_detection"] = turnDetection
