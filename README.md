@@ -4,10 +4,23 @@ A unified Swift library for OpenAI's Realtime API (WebSocket-based voice) and Ch
 
 [![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
 [![Platform](https://img.shields.io/badge/platform-iOS%2018%20|%20macOS%2014-blue.svg)](https://developer.apple.com)
-[![Version](https://img.shields.io/badge/version-1.7.0-brightgreen.svg)](https://github.com/davidgeere/swift-echo/releases)
+[![Version](https://img.shields.io/badge/version-1.7.1-brightgreen.svg)](https://github.com/davidgeere/swift-echo/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 ## 🚀 Latest Updates
+
+**Echo v1.7.1** fixes PCM16 audio normalization:
+
+- **Fixed Normalization**: Uses `32768.0` divisor instead of `Int16.max` for proper [-1.0, 1.0] range
+- **No More Audio Artifacts**: Int16.min now correctly maps to -1.0 (was -1.0000305)
+- **Critical for Echo Cancellation**: Accurate normalization is essential for waveform correlation
+
+**Echo v1.7.0** adds Correlation-Based Echo Cancellation:
+
+- **Waveform Pattern Matching**: Detects echo by comparing mic input with played audio
+- **Handles Loud Echo**: Volume-based gating fails when phone is near speaker
+- **Handles Quiet Speech**: Passes through low-volume user speech that gating would block
+- **Three Modes**: `threshold` (RMS gating), `correlation` (waveform), `hybrid` (both)
 
 **Echo v1.6.0** adds Echo Protection for speaker mode:
 
@@ -159,6 +172,8 @@ let config = EchoConfiguration(
 | `.threshold` | Volume-based gating (original) | Low-echo environments |
 | `.correlation` | Waveform pattern matching | High-echo environments |
 | `.hybrid` | Both methods combined | **Recommended for speaker** |
+
+**Technical Note (v1.7.1+):** PCM16 audio is normalized using `32768.0` as divisor to ensure all values map to the valid `[-1.0, 1.0]` range. This is critical for accurate correlation calculations.
 
 #### Custom Echo Protection
 
