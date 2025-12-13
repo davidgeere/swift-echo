@@ -54,13 +54,17 @@ public actor WebRTCSessionManager {
                 print("[DEBUG-H4] 🔍 turnDetection received: \(turnDetection)")
                 // #endregion
                 
-                // Round threshold to 6 decimal places to avoid API precision errors
+                // Convert threshold to Decimal to avoid IEEE 754 floating-point precision issues
+                // Double(0.7) is stored as 0.69999999999999996 in binary
+                // Decimal can exactly represent base-10 decimals
                 if let threshold = turnDetection["threshold"] as? Double {
-                    let roundedThreshold = (threshold * 1_000_000).rounded() / 1_000_000
-                    turnDetection["threshold"] = roundedThreshold
+                    // Format to 2 decimal places and convert to Decimal
+                    let formattedString = String(format: "%.2f", threshold)
+                    let decimalThreshold = Decimal(string: formattedString) ?? Decimal(threshold)
+                    turnDetection["threshold"] = decimalThreshold
                     
                     // #region agent log H4
-                    print("[DEBUG-H4] 🔍 threshold: original=\(threshold) rounded=\(roundedThreshold)")
+                    print("[DEBUG-H4] 🔍 threshold: original=\(threshold) decimal=\(decimalThreshold)")
                     // #endregion
                 }
                 if let data = try? JSONSerialization.data(withJSONObject: turnDetection) {
