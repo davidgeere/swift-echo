@@ -3,10 +3,7 @@
 // WebRTC implementation of RealtimeTransportProtocol
 
 import Foundation
-
-#if canImport(AmazonChimeSDKMedia)
-import AmazonChimeSDKMedia
-#endif
+import WebRTC
 
 /// WebRTC-based transport for the Realtime API
 ///
@@ -33,10 +30,16 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
     private var _isConnected: Bool = false
     private var isIntentionalDisconnect: Bool = false
     
-    // WebRTC components (using Any to avoid compile-time dependency)
-    private var peerConnection: Any?
-    private var dataChannel: Any?
-    private var localAudioTrack: Any?
+    // WebRTC components
+    private var peerConnectionFactory: RTCPeerConnectionFactory?
+    private var peerConnection: RTCPeerConnection?
+    private var dataChannel: RTCDataChannel?
+    private var localAudioTrack: RTCAudioTrack?
+    private var audioSource: RTCAudioSource?
+    
+    // Delegate wrapper to handle WebRTC callbacks
+    private var peerConnectionDelegate: PeerConnectionDelegate?
+    private var dataChannelDelegate: DataChannelDelegate?
     
     /// Stream of received JSON events from the data channel
     public let eventStream: AsyncStream<String>
@@ -117,14 +120,14 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
                 tools: sessionConfig?["tools"] as? [[String: Any]]
             )
             
-            // Step 3: Fetch ephemeral key (invisible to developer)
+            // Step 4: Fetch ephemeral key (invisible to developer)
             let ephemeralKey = try await sessionManager.fetchEphemeralKey(
                 apiKey: apiKey,
                 configuration: config
             )
             
-            // Step 4: Create WebRTC peer connection and exchange SDP
-            try await setupWebRTCConnection(ephemeralKey: ephemeralKey)
+            // Step 5: Create WebRTC peer connection and exchange SDP
+            try await setupWebRTCConnection(ephemeralKey: ephemeralKey, model: model)
             
             _isConnected = true
             connectionStateContinuation.yield(true)
@@ -158,9 +161,22 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
             throw RealtimeTransportError.notConnected
         }
         
-        // Send via data channel
-        // Note: Actual implementation depends on WebRTC framework
-        try await sendViaDataChannel(eventJSON)
+        guard let dataChannel = dataChannel else {
+            throw RealtimeTransportError.dataChannelFailed("Data channel not available")
+        }
+        
+        guard let data = eventJSON.data(using: .utf8) else {
+            throw RealtimeTransportError.dataChannelFailed("Failed to encode message")
+        }
+        
+        let buffer = RTCDataBuffer(data: data, isBinary: false)
+        let sent = dataChannel.sendData(buffer)
+        
+        if !sent {
+            throw RealtimeTransportError.dataChannelFailed("Failed to send data")
+        }
+        
+        print("[WebRTCTransport] 📤 Sent: \(eventJSON.prefix(100))...")
     }
     
     /// WebRTC handles audio natively - this throws an error
@@ -181,7 +197,8 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
             try await audioHandler.configureAudioSession()
         }
         
-        // Note: Actual audio track setup depends on WebRTC framework
+        // Enable the audio track
+        localAudioTrack?.isEnabled = true
         print("[WebRTCTransport] 🎤 Local audio setup complete")
     }
     
@@ -190,80 +207,222 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
     /// - Parameter muted: Whether to mute the audio
     public func setLocalAudioMuted(_ muted: Bool) async {
         await audioHandler.setMuted(muted)
-        
-        // Note: Also need to enable/disable the WebRTC audio track
-        // This depends on the WebRTC framework being used
+        localAudioTrack?.isEnabled = !muted
     }
     
     // MARK: - WebRTC Setup
     
     /// Sets up the WebRTC peer connection and exchanges SDP
-    private func setupWebRTCConnection(ephemeralKey: String) async throws {
+    private func setupWebRTCConnection(ephemeralKey: String, model: String) async throws {
         print("[WebRTCTransport] 📡 Setting up WebRTC peer connection...")
         
-        #if canImport(AmazonChimeSDKMedia)
-        // Full WebRTC implementation when framework is available
-        try await setupPeerConnectionWithFramework(ephemeralKey: ephemeralKey)
-        #else
-        // Placeholder implementation for when WebRTC framework is not available
-        // This allows the code to compile but will throw at runtime
-        throw RealtimeTransportError.connectionFailed(
-            NSError(domain: "WebRTCTransport", code: -1, userInfo: [
-                NSLocalizedDescriptionKey: "WebRTC framework not available. Please ensure the WebRTC dependency is properly configured."
-            ])
+        // Initialize WebRTC factory
+        RTCInitializeSSL()
+        
+        let encoderFactory = RTCDefaultVideoEncoderFactory()
+        let decoderFactory = RTCDefaultVideoDecoderFactory()
+        peerConnectionFactory = RTCPeerConnectionFactory(
+            encoderFactory: encoderFactory,
+            decoderFactory: decoderFactory
         )
-        #endif
-    }
-    
-    #if canImport(AmazonChimeSDKMedia)
-    /// Full WebRTC implementation with the Amazon Chime SDK
-    private func setupPeerConnectionWithFramework(ephemeralKey: String) async throws {
-        // This would contain the full WebRTC implementation
-        // For now, we'll use a placeholder that demonstrates the flow
         
-        // 1. Create peer connection configuration
-        // 2. Create peer connection
-        // 3. Create data channel named "oai-events"
-        // 4. Add local audio track
-        // 5. Create SDP offer
-        // 6. Exchange SDP with OpenAI
-        // 7. Set remote description
-        // 8. Wait for ICE connection
-        
-        print("[WebRTCTransport] 🔧 WebRTC framework detected, setting up connection...")
-        
-        // TODO: Implement full WebRTC connection using the framework
-        // This requires the specific WebRTC API calls for:
-        // - RTCPeerConnection creation
-        // - RTCDataChannel creation
-        // - Audio track management
-        // - SDP offer/answer exchange
-        
-        throw RealtimeTransportError.connectionFailed(
-            NSError(domain: "WebRTCTransport", code: -1, userInfo: [
-                NSLocalizedDescriptionKey: "WebRTC implementation in progress"
-            ])
-        )
-    }
-    #endif
-    
-    /// Sends data via the WebRTC data channel
-    private func sendViaDataChannel(_ message: String) async throws {
-        // Note: Actual implementation depends on WebRTC framework
-        // The data channel send would look like:
-        // dataChannel?.sendData(message.data(using: .utf8)!)
-        
-        guard dataChannel != nil else {
-            throw RealtimeTransportError.dataChannelFailed("Data channel not available")
+        guard let factory = peerConnectionFactory else {
+            throw RealtimeTransportError.connectionFailed(
+                NSError(domain: "WebRTCTransport", code: -1, userInfo: [
+                    NSLocalizedDescriptionKey: "Failed to create peer connection factory"
+                ])
+            )
         }
         
-        // Placeholder - actual send would go here
-        print("[WebRTCTransport] 📤 Sending via data channel: \(message.prefix(100))...")
+        // Create peer connection configuration
+        let rtcConfig = RTCConfiguration()
+        rtcConfig.iceServers = [] // OpenAI handles ICE internally
+        rtcConfig.sdpSemantics = .unifiedPlan
+        rtcConfig.continualGatheringPolicy = .gatherContinually
+        rtcConfig.bundlePolicy = .maxBundle
+        rtcConfig.rtcpMuxPolicy = .require
+        
+        // Create constraints
+        let constraints = RTCMediaConstraints(
+            mandatoryConstraints: nil,
+            optionalConstraints: nil
+        )
+        
+        // Create peer connection delegate
+        let pcDelegate = PeerConnectionDelegate()
+        self.peerConnectionDelegate = pcDelegate
+        
+        // Setup delegate callbacks
+        pcDelegate.onConnectionStateChange = { [weak self] state in
+            Task { [weak self] in
+                await self?.handleConnectionStateChange(state)
+            }
+        }
+        pcDelegate.onIceConnectionStateChange = { [weak self] state in
+            Task { [weak self] in
+                await self?.handleIceConnectionStateChange(state)
+            }
+        }
+        
+        // Create peer connection
+        guard let pc = factory.peerConnection(
+            with: rtcConfig,
+            constraints: constraints,
+            delegate: pcDelegate
+        ) else {
+            throw RealtimeTransportError.connectionFailed(
+                NSError(domain: "WebRTCTransport", code: -1, userInfo: [
+                    NSLocalizedDescriptionKey: "Failed to create peer connection"
+                ])
+            )
+        }
+        self.peerConnection = pc
+        
+        // Create and configure data channel for events
+        let dataChannelConfig = RTCDataChannelConfiguration()
+        dataChannelConfig.isOrdered = true
+        
+        guard let dc = pc.dataChannel(forLabel: "oai-events", configuration: dataChannelConfig) else {
+            throw RealtimeTransportError.dataChannelFailed("Failed to create data channel")
+        }
+        
+        let dcDelegate = DataChannelDelegate()
+        dcDelegate.onMessage = { [weak self] message in
+            Task { [weak self] in
+                await self?.handleDataChannelMessage(message)
+            }
+        }
+        dcDelegate.onStateChange = { [weak self] state in
+            Task { [weak self] in
+                await self?.handleDataChannelStateChange(state)
+            }
+        }
+        dc.delegate = dcDelegate
+        self.dataChannel = dc
+        self.dataChannelDelegate = dcDelegate
+        
+        // Create audio track
+        let audioConstraints = RTCMediaConstraints(
+            mandatoryConstraints: nil,
+            optionalConstraints: [
+                "googEchoCancellation": "true",
+                "googAutoGainControl": "true",
+                "googNoiseSuppression": "true",
+                "googHighpassFilter": "true"
+            ]
+        )
+        
+        let audioSource = factory.audioSource(with: audioConstraints)
+        self.audioSource = audioSource
+        
+        let audioTrack = factory.audioTrack(with: audioSource, trackId: "audio0")
+        audioTrack.isEnabled = true
+        self.localAudioTrack = audioTrack
+        
+        // Add audio track to peer connection
+        let streamIds = ["stream0"]
+        pc.add(audioTrack, streamIds: streamIds)
+        
+        // Add transceiver for receiving audio
+        let transceiverInit = RTCRtpTransceiverInit()
+        transceiverInit.direction = .sendRecv
+        transceiverInit.streamIds = streamIds
+        
+        pc.addTransceiver(of: .audio, init: transceiverInit)
+        
+        // Create SDP offer
+        let offerConstraints = RTCMediaConstraints(
+            mandatoryConstraints: [
+                "OfferToReceiveAudio": "true",
+                "OfferToReceiveVideo": "false"
+            ],
+            optionalConstraints: nil
+        )
+        
+        // Get SDP offer string (extracting just the string to avoid Sendable issues)
+        let offerSDPString = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
+            pc.offer(for: offerConstraints) { sdp, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                } else if let sdp = sdp {
+                    // Extract just the SDP string which is Sendable
+                    continuation.resume(returning: sdp.sdp)
+                } else {
+                    continuation.resume(throwing: NSError(domain: "WebRTCTransport", code: -1, userInfo: [
+                        NSLocalizedDescriptionKey: "No SDP offer generated"
+                    ]))
+                }
+            }
+        }
+        
+        // Create the offer description and set local description
+        let offer = RTCSessionDescription(type: .offer, sdp: offerSDPString)
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            pc.setLocalDescription(offer) { error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
+                }
+            }
+        }
+        
+        print("[WebRTCTransport] 📝 Created SDP offer, exchanging with OpenAI...")
+        
+        // Exchange SDP with OpenAI
+        let sdpAnswer = try await sessionManager.exchangeSDP(
+            sdpOffer: offerSDPString,
+            ephemeralKey: ephemeralKey
+        )
+        
+        // Set remote description
+        let remoteDescription = RTCSessionDescription(type: .answer, sdp: sdpAnswer)
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            pc.setRemoteDescription(remoteDescription) { error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
+                }
+            }
+        }
+        
+        print("[WebRTCTransport] ✅ SDP exchange complete, connection established")
     }
     
-    /// Handles incoming data channel messages
+    // MARK: - Event Handlers
+    
+    private func handleConnectionStateChange(_ state: RTCPeerConnectionState) {
+        print("[WebRTCTransport] 🔗 Connection state: \(state.rawValue)")
+        
+        switch state {
+        case .connected:
+            _isConnected = true
+            connectionStateContinuation.yield(true)
+        case .disconnected, .failed, .closed:
+            if !isIntentionalDisconnect {
+                _isConnected = false
+                connectionStateContinuation.yield(false)
+            }
+        default:
+            break
+        }
+    }
+    
+    private func handleIceConnectionStateChange(_ state: RTCIceConnectionState) {
+        print("[WebRTCTransport] 🧊 ICE state: \(state.rawValue)")
+    }
+    
     private func handleDataChannelMessage(_ message: String) {
         eventContinuation.yield(message)
+    }
+    
+    private func handleDataChannelStateChange(_ state: RTCDataChannelState) {
+        print("[WebRTCTransport] 📡 Data channel state: \(state.rawValue)")
+        
+        if state == .open {
+            print("[WebRTCTransport] ✅ Data channel opened")
+        }
     }
     
     // MARK: - Cleanup
@@ -273,19 +432,30 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
         isIntentionalDisconnect = false
         
         // Close data channel
+        dataChannel?.close()
         dataChannel = nil
+        dataChannelDelegate = nil
+        
+        // Disable and remove audio track
+        localAudioTrack?.isEnabled = false
+        localAudioTrack = nil
+        audioSource = nil
         
         // Close peer connection
+        peerConnection?.close()
         peerConnection = nil
+        peerConnectionDelegate = nil
         
-        // Remove audio track
-        localAudioTrack = nil
+        // Clear factory
+        peerConnectionFactory = nil
         
         // Deactivate audio session
         await audioHandler.deactivateAudioSession()
         
         // Clear ephemeral key
         await sessionManager.clearEphemeralKey()
+        
+        RTCCleanupSSL()
     }
     
     deinit {
@@ -294,3 +464,70 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
     }
 }
 
+// MARK: - Peer Connection Delegate
+
+/// Delegate wrapper for RTCPeerConnection callbacks
+private final class PeerConnectionDelegate: NSObject, RTCPeerConnectionDelegate, @unchecked Sendable {
+    var onConnectionStateChange: ((RTCPeerConnectionState) -> Void)?
+    var onIceConnectionStateChange: ((RTCIceConnectionState) -> Void)?
+    var onIceCandidate: ((RTCIceCandidate) -> Void)?
+    
+    func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {
+        print("[PeerConnectionDelegate] Signaling state: \(stateChanged.rawValue)")
+    }
+    
+    func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {
+        print("[PeerConnectionDelegate] Added stream: \(stream.streamId)")
+    }
+    
+    func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {
+        print("[PeerConnectionDelegate] Removed stream: \(stream.streamId)")
+    }
+    
+    func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {
+        print("[PeerConnectionDelegate] Should negotiate")
+    }
+    
+    func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
+        onIceConnectionStateChange?(newState)
+    }
+    
+    func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {
+        print("[PeerConnectionDelegate] ICE gathering state: \(newState.rawValue)")
+    }
+    
+    func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
+        print("[PeerConnectionDelegate] Generated ICE candidate")
+        onIceCandidate?(candidate)
+    }
+    
+    func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {
+        print("[PeerConnectionDelegate] Removed ICE candidates")
+    }
+    
+    func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {
+        print("[PeerConnectionDelegate] Opened data channel: \(dataChannel.label)")
+    }
+    
+    func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCPeerConnectionState) {
+        onConnectionStateChange?(stateChanged)
+    }
+}
+
+// MARK: - Data Channel Delegate
+
+/// Delegate wrapper for RTCDataChannel callbacks
+private final class DataChannelDelegate: NSObject, RTCDataChannelDelegate, @unchecked Sendable {
+    var onMessage: ((String) -> Void)?
+    var onStateChange: ((RTCDataChannelState) -> Void)?
+    
+    func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {
+        onStateChange?(dataChannel.readyState)
+    }
+    
+    func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {
+        if let message = String(data: buffer.data, encoding: .utf8) {
+            onMessage?(message)
+        }
+    }
+}

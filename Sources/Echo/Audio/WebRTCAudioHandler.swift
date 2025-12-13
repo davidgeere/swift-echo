@@ -4,10 +4,7 @@
 
 @preconcurrency import AVFoundation
 import Foundation
-
-#if canImport(AmazonChimeSDKMedia)
-import AmazonChimeSDKMedia
-#endif
+import WebRTC
 
 /// Handles WebRTC audio input and output tracks
 ///

@@ -9,18 +9,18 @@ import Foundation
 public enum AudioOutputDeviceType: Sendable, Equatable {
     /// Built-in speaker
     case builtInSpeaker
-
+    
     /// Built-in receiver (earpiece)
     case builtInReceiver
-
+    
     /// Bluetooth audio device
     /// - Parameter name: Optional device name (e.g., "AirPods Pro", "External Speaker")
     case bluetooth(name: String?)
-
+    
     /// Wired headphones
     /// - Parameter name: Optional device name
     case wiredHeadphones(name: String?)
-
+    
     /// Let system choose the default route
     case systemDefault
 
@@ -28,7 +28,7 @@ public enum AudioOutputDeviceType: Sendable, Equatable {
     /// Best for voice conversations - provides speaker output by default while
     /// automatically switching to Bluetooth when available
     case smart
-
+    
     /// Human-readable description for UI display
     public var description: String {
         switch self {
@@ -46,7 +46,7 @@ public enum AudioOutputDeviceType: Sendable, Equatable {
             return "Smart (Bluetooth/Speaker)"
         }
     }
-
+    
     /// Whether this is a Bluetooth device
     public var isBluetooth: Bool {
         switch self {
@@ -73,7 +73,7 @@ public enum AudioOutputDeviceType: Sendable, Equatable {
             return true
         }
     }
-
+    
     /// Creates an AudioOutputDeviceType from AVAudioSession port type and name
     /// - Parameters:
     ///   - portType: The AVAudioSession port type
@@ -82,7 +82,7 @@ public enum AudioOutputDeviceType: Sendable, Equatable {
     #if os(iOS)
     static func from(portType: AVAudioSession.Port, portName: String) -> AudioOutputDeviceType {
         let name: String? = portName.isEmpty ? nil : portName
-
+        
         switch portType {
         case .builtInSpeaker:
             return .builtInSpeaker
