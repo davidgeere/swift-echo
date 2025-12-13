@@ -112,12 +112,14 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
             }
             
             // Step 3: Build session configuration
+            // SOLVE-4: Include transcription configuration for WebRTC
             let config = WebRTCSessionManager.SessionConfiguration(
                 model: model,
                 voice: sessionConfig?["voice"] as? String,
                 instructions: sessionConfig?["instructions"] as? String,
                 turnDetection: sessionConfig?["turn_detection"] as? [String: Any],
-                tools: sessionConfig?["tools"] as? [[String: Any]]
+                tools: sessionConfig?["tools"] as? [[String: Any]],
+                transcription: sessionConfig?["transcription"] as? [String: Any]
             )
             
             // Step 4: Fetch ephemeral key (invisible to developer)

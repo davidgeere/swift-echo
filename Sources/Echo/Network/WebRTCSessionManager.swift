@@ -34,13 +34,15 @@ public actor WebRTCSessionManager {
         public let instructions: String?
         public let turnDetectionJSON: String?
         public let toolsJSON: String?
+        public let transcriptionJSON: String?  // SOLVE-4: Add transcription config
         
         public init(
             model: String,
             voice: String? = nil,
             instructions: String? = nil,
             turnDetection: [String: Any]? = nil,
-            tools: [[String: Any]]? = nil
+            tools: [[String: Any]]? = nil,
+            transcription: [String: Any]? = nil  // SOLVE-4: Add transcription parameter
         ) {
             self.type = "realtime"
             self.model = model
@@ -90,6 +92,15 @@ public actor WebRTCSessionManager {
             } else {
                 self.toolsJSON = nil
             }
+            
+            // SOLVE-4: Convert transcription config to JSON string
+            if let transcription = transcription,
+               let data = try? JSONSerialization.data(withJSONObject: transcription) {
+                self.transcriptionJSON = String(data: data, encoding: .utf8)
+                print("[DEBUG-SOLVE-4] 🎤 transcriptionJSON: \(self.transcriptionJSON ?? "nil")")
+            } else {
+                self.transcriptionJSON = nil
+            }
         }
         
         func toJSON() -> [String: Any] {
@@ -102,12 +113,22 @@ public actor WebRTCSessionManager {
             var audio: [String: Any] = [:]
             
             // Input audio format
-            audio["input"] = [
+            var input: [String: Any] = [
                 "format": [
                     "type": "audio/pcm",
                     "rate": 24000
                 ]
             ]
+            
+            // SOLVE-4: Add transcription config to input
+            if let transcriptionJSON = transcriptionJSON,
+               let transcriptionData = transcriptionJSON.data(using: .utf8),
+               let transcription = try? JSONSerialization.jsonObject(with: transcriptionData) as? [String: Any] {
+                input["transcription"] = transcription
+                print("[DEBUG-SOLVE-4] 🎤 Added transcription to input: \(transcription)")
+            }
+            
+            audio["input"] = input
             
             // Output audio format - SOLVE-2: Add rate to output format
             print("[DEBUG-SOLVE-2] 🔧 Adding rate to output format")
@@ -146,9 +167,9 @@ public actor WebRTCSessionManager {
                 }
                 
                 if var inputAudio = session["audio"] as? [String: Any],
-                   var input = inputAudio["input"] as? [String: Any] {
-                    input["turn_detection"] = turnDetection
-                    inputAudio["input"] = input
+                   var inputConfig = inputAudio["input"] as? [String: Any] {
+                    inputConfig["turn_detection"] = turnDetection
+                    inputAudio["input"] = inputConfig
                     session["audio"] = inputAudio
                 }
             }
