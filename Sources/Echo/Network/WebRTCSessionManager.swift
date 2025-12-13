@@ -141,21 +141,20 @@ public actor WebRTCSessionManager {
             if let voice = voice {
                 output["voice"] = voice
             }
-            
-            // SOLVE-5: Add transcription config to output for model speech transcripts
-            if let transcriptionJSON = transcriptionJSON,
-               let transcriptionData = transcriptionJSON.data(using: .utf8),
-               let transcription = try? JSONSerialization.jsonObject(with: transcriptionData) as? [String: Any] {
-                output["transcription"] = transcription
-                print("[DEBUG-SOLVE-5] 🎙️ Added transcription to output: \(transcription)")
-            }
-            
             audio["output"] = output
             
             session["audio"] = audio
             
             if let instructions = instructions {
                 session["instructions"] = instructions
+            }
+            
+            // SOLVE-5: Add output_audio_transcription at SESSION root level for model speech transcripts
+            if let transcriptionJSON = transcriptionJSON,
+               let transcriptionData = transcriptionJSON.data(using: .utf8),
+               let transcription = try? JSONSerialization.jsonObject(with: transcriptionData) as? [String: Any] {
+                session["output_audio_transcription"] = transcription
+                print("[DEBUG-SOLVE-5] 🎙️ Added output_audio_transcription to session: \(transcription)")
             }
             
             // #region agent log SOLVE-1
