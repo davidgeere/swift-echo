@@ -109,10 +109,12 @@ public actor WebRTCSessionManager {
                 ]
             ]
             
-            // Output audio format
+            // Output audio format - SOLVE-2: Add rate to output format
+            print("[DEBUG-SOLVE-2] 🔧 Adding rate to output format")
             var output: [String: Any] = [
                 "format": [
-                    "type": "audio/pcm"
+                    "type": "audio/pcm",
+                    "rate": 24000
                 ]
             ]
             if let voice = voice {
