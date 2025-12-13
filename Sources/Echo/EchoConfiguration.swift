@@ -69,6 +69,16 @@ public struct EchoConfiguration: Sendable {
     /// When enabled, all audio interactions are converted to text.
     public let enableTranscription: Bool
 
+    // MARK: - Transport
+
+    /// Transport type for connecting to the Realtime API.
+    /// - `.webSocket`: Traditional WebSocket connection (default)
+    /// - `.webRTC`: WebRTC connection with native audio tracks
+    ///
+    /// WebRTC provides lower latency and better audio quality as it uses
+    /// native media tracks instead of base64-encoded audio.
+    public let transportType: RealtimeTransportType
+
     // MARK: - Logging
 
     /// Logging level for debugging.
@@ -93,6 +103,7 @@ public struct EchoConfiguration: Sendable {
     ///   - reasoningEffort: Reasoning depth control (default: .none to minimize reasoning)
     ///   - systemMessage: Default system instructions for all conversations (default: nil)
     ///   - enableTranscription: Enable audio transcription (default: true)
+    ///   - transportType: Transport type for Realtime API (default: .webSocket)
     ///   - logLevel: Logging verbosity (default: .info)
     public init(
         defaultMode: EchoMode = .text,
@@ -109,6 +120,7 @@ public struct EchoConfiguration: Sendable {
         reasoningEffort: ReasoningEffort = .none,
         systemMessage: String? = nil,
         enableTranscription: Bool = true,
+        transportType: RealtimeTransportType = .webSocket,
         logLevel: LogLevel = .info
     ) {
         self.defaultMode = defaultMode
@@ -125,6 +137,7 @@ public struct EchoConfiguration: Sendable {
         self.reasoningEffort = reasoningEffort
         self.systemMessage = systemMessage
         self.enableTranscription = enableTranscription
+        self.transportType = transportType
         self.logLevel = logLevel
     }
 
@@ -168,7 +181,8 @@ public struct EchoConfiguration: Sendable {
             maxOutputTokens: maxTokens,
             defaultAudioOutput: defaultAudioOutput,
             echoProtection: echoProtection,
-            inputAudioConfiguration: inputAudioConfiguration
+            inputAudioConfiguration: inputAudioConfiguration,
+            transportType: transportType
         )
     }
 }
