@@ -1133,7 +1133,7 @@ public struct RealtimeClientConfiguration: Sendable {
         defaultAudioOutput: AudioOutputDeviceType? = nil,
         echoProtection: EchoProtectionConfiguration? = nil,
         inputAudioConfiguration: InputAudioConfiguration? = nil,
-        transportType: RealtimeTransportType = .webSocket
+        transportType: RealtimeTransportType = .webRTC
     ) {
         self.model = model
         self.voice = voice
