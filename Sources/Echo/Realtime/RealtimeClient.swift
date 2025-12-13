@@ -254,12 +254,16 @@ public actor RealtimeClient: TurnManagerDelegate {
         
         // Convert tools to config format
         if !tools.isEmpty {
-            config["tools"] = tools.map { tool -> [String: Any] in
-                [
+            config["tools"] = tools.compactMap { tool -> [String: Any]? in
+                // Convert ToolParameters to a serializable dictionary
+                guard let parametersDict = try? tool.parameters.toJSONSchema().toDictionary() else {
+                    return nil
+                }
+                return [
                     "type": "function",
                     "name": tool.name,
                     "description": tool.description,
-                    "parameters": tool.parameters
+                    "parameters": parametersDict
                 ]
             }
         }
