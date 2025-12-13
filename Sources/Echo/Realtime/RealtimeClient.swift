@@ -252,6 +252,12 @@ public actor RealtimeClient: TurnManagerDelegate {
             config["turn_detection"] = turnDetectionConfig
         }
         
+        // SOLVE-4: Add transcription configuration for WebRTC
+        // Default to whisper-1 which is the standard transcription model
+        config["transcription"] = [
+            "model": "whisper-1"
+        ]
+        
         // Convert tools to config format
         if !tools.isEmpty {
             config["tools"] = tools.compactMap { tool -> [String: Any]? in
