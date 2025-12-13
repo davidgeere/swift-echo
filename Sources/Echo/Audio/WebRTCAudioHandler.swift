@@ -157,19 +157,35 @@ public actor WebRTCAudioHandler {
         let session = AVAudioSession.sharedInstance()
         let currentRoute = session.currentRoute
         
+        // Collect unique Bluetooth devices
+        var bluetoothNames: Set<String> = []
+        var headphoneNames: Set<String> = []
+        
         for output in currentRoute.outputs {
             switch output.portType {
             case .bluetoothA2DP, .bluetoothHFP, .bluetoothLE:
-                if !devices.contains(.bluetooth) {
-                    devices.append(.bluetooth)
+                let name = output.portName
+                if !name.isEmpty {
+                    bluetoothNames.insert(name)
                 }
             case .headphones:
-                if !devices.contains(.wiredHeadphones) {
-                    devices.append(.wiredHeadphones)
+                let name = output.portName
+                if !name.isEmpty {
+                    headphoneNames.insert(name)
                 }
             default:
                 break
             }
+        }
+        
+        // Add bluetooth devices with names
+        for name in bluetoothNames {
+            devices.append(.bluetooth(name: name))
+        }
+        
+        // Add headphone devices with names
+        for name in headphoneNames {
+            devices.append(.wiredHeadphones(name: name))
         }
         
         return devices
