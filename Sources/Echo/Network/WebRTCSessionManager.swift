@@ -51,8 +51,7 @@ public actor WebRTCSessionManager {
             // Round threshold to avoid floating-point precision issues
             if var turnDetection = turnDetection {
                 // #region agent log H1-H4
-                let logPath = "/Users/davidgeere/Development/swift-echo/.cursor/debug.log"
-                let originalThreshold = turnDetection["threshold"] as? Double
+                print("[DEBUG-H4] 🔍 turnDetection received: \(turnDetection)")
                 // #endregion
                 
                 // Round threshold to 6 decimal places to avoid API precision errors
@@ -61,28 +60,14 @@ public actor WebRTCSessionManager {
                     turnDetection["threshold"] = roundedThreshold
                     
                     // #region agent log H4
-                    let log1 = "{\"location\":\"WebRTCSessionManager.swift:init\",\"message\":\"threshold_rounding\",\"data\":{\"original\":\(threshold),\"rounded\":\(roundedThreshold),\"originalBits\":\"\(threshold.bitPattern)\",\"roundedBits\":\"\(roundedThreshold.bitPattern)\"},\"hypothesisId\":\"H4\",\"timestamp\":\(Date().timeIntervalSince1970 * 1000)}\n"
-                    if let handle = FileHandle(forWritingAtPath: logPath) {
-                        handle.seekToEndOfFile()
-                        handle.write(log1.data(using: .utf8)!)
-                        handle.closeFile()
-                    } else {
-                        FileManager.default.createFile(atPath: logPath, contents: log1.data(using: .utf8))
-                    }
+                    print("[DEBUG-H4] 🔍 threshold: original=\(threshold) rounded=\(roundedThreshold)")
                     // #endregion
                 }
                 if let data = try? JSONSerialization.data(withJSONObject: turnDetection) {
                     self.turnDetectionJSON = String(data: data, encoding: .utf8)
                     
                     // #region agent log H2
-                    let log2 = "{\"location\":\"WebRTCSessionManager.swift:init\",\"message\":\"turnDetection_json\",\"data\":{\"json\":\"\(self.turnDetectionJSON?.replacingOccurrences(of: "\"", with: "\\\"") ?? "nil")\"},\"hypothesisId\":\"H2\",\"timestamp\":\(Date().timeIntervalSince1970 * 1000)}\n"
-                    if let handle = FileHandle(forWritingAtPath: logPath) {
-                        handle.seekToEndOfFile()
-                        handle.write(log2.data(using: .utf8)!)
-                        handle.closeFile()
-                    } else {
-                        FileManager.default.createFile(atPath: logPath, contents: log2.data(using: .utf8))
-                    }
+                    print("[DEBUG-H2] 🔍 turnDetectionJSON after serialization: \(self.turnDetectionJSON ?? "nil")")
                     // #endregion
                 } else {
                     self.turnDetectionJSON = nil
@@ -91,15 +76,7 @@ public actor WebRTCSessionManager {
                 self.turnDetectionJSON = nil
                 
                 // #region agent log H3
-                let logPath = "/Users/davidgeere/Development/swift-echo/.cursor/debug.log"
-                let log3 = "{\"location\":\"WebRTCSessionManager.swift:init\",\"message\":\"no_turnDetection\",\"data\":{},\"hypothesisId\":\"H3\",\"timestamp\":\(Date().timeIntervalSince1970 * 1000)}\n"
-                if let handle = FileHandle(forWritingAtPath: logPath) {
-                    handle.seekToEndOfFile()
-                    handle.write(log3.data(using: .utf8)!)
-                    handle.closeFile()
-                } else {
-                    FileManager.default.createFile(atPath: logPath, contents: log3.data(using: .utf8))
-                }
+                print("[DEBUG-H3] 🔍 No turnDetection provided to SessionConfiguration")
                 // #endregion
             }
             
@@ -209,17 +186,8 @@ public actor WebRTCSessionManager {
         request.httpBody = bodyData
         
         // #region agent log H2-H5
-        let logPath = "/Users/davidgeere/Development/swift-echo/.cursor/debug.log"
         let bodyString = String(data: bodyData, encoding: .utf8) ?? "nil"
-        let escapedBody = bodyString.replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: "")
-        let log4 = "{\"location\":\"WebRTCSessionManager.swift:fetchEphemeralKey\",\"message\":\"request_body\",\"data\":{\"body\":\"\(escapedBody)\"},\"hypothesisId\":\"H2-H5\",\"timestamp\":\(Date().timeIntervalSince1970 * 1000)}\n"
-        if let handle = FileHandle(forWritingAtPath: logPath) {
-            handle.seekToEndOfFile()
-            handle.write(log4.data(using: .utf8)!)
-            handle.closeFile()
-        } else {
-            FileManager.default.createFile(atPath: logPath, contents: log4.data(using: .utf8))
-        }
+        print("[DEBUG-H2-H5] 🔍 FULL REQUEST BODY: \(bodyString)")
         // #endregion
         
         do {
