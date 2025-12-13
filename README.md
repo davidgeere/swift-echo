@@ -4,7 +4,7 @@ A unified Swift library for OpenAI's Realtime API (WebSocket-based voice) and Ch
 
 [![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
 [![Platform](https://img.shields.io/badge/platform-iOS%2018%20|%20macOS%2014-blue.svg)](https://developer.apple.com)
-[![Version](https://img.shields.io/badge/version-1.6.1-brightgreen.svg)](https://github.com/davidgeere/swift-echo/releases)
+[![Version](https://img.shields.io/badge/version-1.7.0-brightgreen.svg)](https://github.com/davidgeere/swift-echo/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 ## 🚀 Latest Updates
@@ -121,16 +121,44 @@ conversation.setMuted(false)  // Unmute microphone
 When using speaker output, the AI can hear itself and interrupt its own responses. Echo v1.6.0 solves this with a multi-layered approach:
 
 ```swift
-// Simple: Use the speaker-optimized preset
+// Simple: Use the speaker-optimized preset (now with correlation-based echo cancellation!)
 let config = EchoConfiguration.speakerOptimized
 let echo = Echo(key: apiKey, configuration: config)
 
 // This preset includes:
+// - Hybrid echo protection (threshold + correlation-based)
 // - Semantic VAD with low eagerness (waits longer before responding)
 // - Far-field noise reduction (filters speaker echo)
-// - Client-side audio gating (blocks low-level sounds during speech)
 // - Smart audio output (Bluetooth if available, speaker otherwise)
 ```
+
+#### Correlation-Based Echo Cancellation (v1.7.0+)
+
+The new correlation-based echo cancellation detects echo by comparing waveform patterns, not just volume. This solves two key problems:
+
+1. **Loud echo** (phone near speaker) - Volume gating allows it through
+2. **Quiet user speech** (phone held away) - Volume gating blocks it
+
+```swift
+// Use correlation-optimized preset for best accuracy
+let config = EchoConfiguration.correlationOptimized
+
+// Or configure manually
+let config = EchoConfiguration(
+    echoProtection: EchoProtectionConfiguration(
+        mode: .correlation,  // or .hybrid for both methods
+        correlationConfig: .default
+    )
+)
+```
+
+**Echo Protection Modes:**
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| `.threshold` | Volume-based gating (original) | Low-echo environments |
+| `.correlation` | Waveform pattern matching | High-echo environments |
+| `.hybrid` | Both methods combined | **Recommended for speaker** |
 
 #### Custom Echo Protection
 

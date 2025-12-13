@@ -40,4 +40,14 @@ public protocol AudioPlaybackProtocol: Actor {
     
     /// Stream of audio levels for output visualization including frequency bands
     var audioLevelStream: AsyncStream<AudioLevels> { get }
+
+    // MARK: - Echo Cancellation
+
+    /// Sets the echo canceller for reference audio capture
+    ///
+    /// When set, the playback will feed played audio to the echo canceller's
+    /// reference buffer, enabling correlation-based echo detection.
+    ///
+    /// - Parameter canceller: The echo canceller to use, or nil to disable
+    func setEchoCanceller(_ canceller: EchoCanceller?) async
 }

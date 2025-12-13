@@ -89,4 +89,12 @@ public actor MockAudioCapture: AudioCaptureProtocol {
         _isGatingEnabled = false
         _gatingThreshold = 0.0
     }
+
+    // MARK: - Echo Cancellation
+
+    private var _echoCanceller: EchoCanceller?
+
+    public func setEchoCanceller(_ canceller: EchoCanceller?) async {
+        _echoCanceller = canceller
+    }
 }

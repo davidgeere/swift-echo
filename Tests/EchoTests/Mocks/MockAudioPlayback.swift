@@ -87,4 +87,12 @@ public actor MockAudioPlayback: AudioPlaybackProtocol {
     public var audioEngine: AVAudioEngine? {
         return nil
     }
+
+    // MARK: - Echo Cancellation
+
+    private var _echoCanceller: EchoCanceller?
+
+    public func setEchoCanceller(_ canceller: EchoCanceller?) async {
+        _echoCanceller = canceller
+    }
 }

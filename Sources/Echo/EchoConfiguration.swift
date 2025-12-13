@@ -131,14 +131,24 @@ public struct EchoConfiguration: Sendable {
     /// Default configuration with sensible defaults.
     public static let `default` = EchoConfiguration()
 
-    /// Speaker-optimized configuration with echo protection.
+    /// Speaker-optimized configuration with hybrid echo protection.
     /// Uses smart audio output (Bluetooth if available, otherwise speaker).
-    /// Includes semantic VAD, noise reduction, and client-side echo gating.
+    /// Includes semantic VAD, noise reduction, and correlation-based echo cancellation.
     public static let speakerOptimized = EchoConfiguration(
         defaultMode: .audio,
         defaultAudioOutput: .smart,
         inputAudioConfiguration: .farField,
-        echoProtection: .default,
+        echoProtection: .hybrid,
+        turnDetection: .automatic(.speakerOptimized)
+    )
+
+    /// Configuration with correlation-based echo cancellation.
+    /// Uses waveform pattern matching for superior echo detection accuracy.
+    public static let correlationOptimized = EchoConfiguration(
+        defaultMode: .audio,
+        defaultAudioOutput: .smart,
+        inputAudioConfiguration: .farField,
+        echoProtection: .correlationDefault,
         turnDetection: .automatic(.speakerOptimized)
     )
 

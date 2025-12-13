@@ -333,6 +333,7 @@ struct AudioLifecycleEventTests {
             func resume() async throws {}
             func enableGating(threshold: Float) async { isGatingEnabled = true }
             func disableGating() async { isGatingEnabled = false }
+            func setEchoCanceller(_ canceller: EchoCanceller?) async {}
         }
         
         // Create RealtimeClient with failing mock audio capture
