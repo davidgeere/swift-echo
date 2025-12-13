@@ -72,8 +72,8 @@ public struct EchoConfiguration: Sendable {
     // MARK: - Transport
 
     /// Transport type for connecting to the Realtime API.
-    /// - `.webSocket`: Traditional WebSocket connection (default)
-    /// - `.webRTC`: WebRTC connection with native audio tracks
+    /// - `.webRTC`: WebRTC connection with native audio tracks (default)
+    /// - `.webSocket`: Traditional WebSocket connection
     ///
     /// WebRTC provides lower latency and better audio quality as it uses
     /// native media tracks instead of base64-encoded audio.
@@ -103,7 +103,7 @@ public struct EchoConfiguration: Sendable {
     ///   - reasoningEffort: Reasoning depth control (default: .none to minimize reasoning)
     ///   - systemMessage: Default system instructions for all conversations (default: nil)
     ///   - enableTranscription: Enable audio transcription (default: true)
-    ///   - transportType: Transport type for Realtime API (default: .webSocket)
+    ///   - transportType: Transport type for Realtime API (default: .webRTC)
     ///   - logLevel: Logging verbosity (default: .info)
     public init(
         defaultMode: EchoMode = .text,
@@ -120,7 +120,7 @@ public struct EchoConfiguration: Sendable {
         reasoningEffort: ReasoningEffort = .none,
         systemMessage: String? = nil,
         enableTranscription: Bool = true,
-        transportType: RealtimeTransportType = .webSocket,
+        transportType: RealtimeTransportType = .webRTC,
         logLevel: LogLevel = .info
     ) {
         self.defaultMode = defaultMode
