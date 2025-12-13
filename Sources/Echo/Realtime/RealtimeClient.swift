@@ -24,7 +24,9 @@ public actor RealtimeClient: TurnManagerDelegate {
     // TurnManager for proper event routing
     private let turnManager: TurnManager?
 
-    private var webSocket: WebSocketManager
+    /// The transport layer (WebSocket or WebRTC)
+    private var transport: any RealtimeTransportProtocol
+    
     private var audioCapture: (any AudioCaptureProtocol)?
     private var audioPlayback: (any AudioPlaybackProtocol)?
 
@@ -96,9 +98,16 @@ public actor RealtimeClient: TurnManagerDelegate {
         self.turnManager = turnManager
         self.toolExecutor = toolExecutor
         self.delegate = delegate
-        self.webSocket = WebSocketManager()
         self.audioCaptureFactory = audioCaptureFactory
         self.audioPlaybackFactory = audioPlaybackFactory
+
+        // Create transport based on configuration
+        switch configuration.transportType {
+        case .webSocket:
+            self.transport = WebSocketTransport()
+        case .webRTC:
+            self.transport = WebRTCTransport()
+        }
 
         // Wire up TurnManager delegate to self for interruption handling
         Task {
@@ -180,39 +189,38 @@ public actor RealtimeClient: TurnManagerDelegate {
             )
         }
 
-        // Build WebSocket URL with model parameter
-        guard let url = URL(string: "wss://api.openai.com/v1/realtime?model=\(modelString)") else {
-            sessionState = .failed
-            throw RealtimeError.connectionFailed(
-                NSError(domain: "RealtimeClient", code: -1, userInfo: [
-                    NSLocalizedDescriptionKey: "Invalid WebSocket URL"
-                ])
-            )
-        }
-
-        // Connect to WebSocket
+        // Connect using the transport layer
         do {
             // CRITICAL: Start event listeners BEFORE connecting
             // to ensure we don't miss session.created
             startEventListener()
             startConnectionStateMonitor()
 
-            try await webSocket.connect(
-                to: url,
-                headers: [
-                    "Authorization": "Bearer \(apiKey)",
-                    "OpenAI-Beta": "realtime=v1"
-                ]
+            // Build session config for transport (as JSON string for Sendable compliance)
+            let sessionConfigJSON = buildSessionConfigJSON()
+            
+            // Connect via transport (WebSocket or WebRTC)
+            // For WebSocket: builds URL and connects with API key
+            // For WebRTC: fetches ephemeral key, exchanges SDP (all invisible to developer)
+            try await transport.connect(
+                apiKey: apiKey,
+                model: modelString,
+                sessionConfigJSON: sessionConfigJSON
             )
 
             // Wait for session.created event (up to 10 seconds)
             try await waitForSessionCreated()
 
-            // Configure session
-            try await configureSession()
+            // Check if transport handles audio natively
+            let handlesAudioNatively = await transport.handlesAudioNatively
 
-            // Start audio if configured
-            if configuration.startAudioAutomatically {
+            // Configure session (only for WebSocket - WebRTC sends config in connect)
+            if !handlesAudioNatively {
+                try await configureSession()
+            }
+
+            // Start audio if configured (only for WebSocket - WebRTC handles audio natively)
+            if configuration.startAudioAutomatically && !handlesAudioNatively {
                 try await startAudio()
             }
 
@@ -223,10 +231,47 @@ public actor RealtimeClient: TurnManagerDelegate {
 
         } catch {
             sessionState = .failed
-            // Clean up WebSocket on failure
-            await webSocket.disconnect()
+            // Clean up transport on failure
+            await transport.disconnect()
             throw RealtimeError.connectionFailed(error)
         }
+    }
+    
+    /// Builds session configuration as JSON string for transport
+    private func buildSessionConfigJSON() -> String? {
+        var config: [String: Any] = [:]
+        
+        if let instructions = configuration.instructions {
+            config["instructions"] = instructions
+        }
+        
+        config["voice"] = configuration.voice.rawValue
+        
+        if let turnDetection = configuration.turnDetection,
+           let turnDetectionConfig = turnDetection.toRealtimeFormat() {
+            config["turn_detection"] = turnDetectionConfig
+        }
+        
+        // Convert tools to config format
+        if !tools.isEmpty {
+            config["tools"] = tools.map { tool -> [String: Any] in
+                [
+                    "type": "function",
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.parameters
+                ]
+            }
+        }
+        
+        // Convert to JSON string for Sendable compliance
+        guard !config.isEmpty,
+              let jsonData = try? JSONSerialization.data(withJSONObject: config),
+              let jsonString = String(data: jsonData, encoding: .utf8) else {
+            return nil
+        }
+        
+        return jsonString
     }
 
     /// Disconnects from the Realtime API
@@ -248,8 +293,8 @@ public actor RealtimeClient: TurnManagerDelegate {
         }
         #endif
 
-        // Close WebSocket
-        await webSocket.disconnect()
+        // Close transport (WebSocket or WebRTC)
+        await transport.disconnect()
 
         sessionState = .disconnected
         sessionId = nil
@@ -272,7 +317,7 @@ public actor RealtimeClient: TurnManagerDelegate {
 
         do {
             let json = try event.toJSON()
-            try await webSocket.send(json)
+            try await transport.send(eventJSON: json)
         } catch {
             throw RealtimeError.eventEncodingFailed(error)
         }
@@ -761,7 +806,7 @@ public actor RealtimeClient: TurnManagerDelegate {
 
     private func startEventListener() {
         Task {
-            for await message in webSocket.messageStream {
+            for await message in await transport.eventStream {
                 await handleServerMessage(message)
             }
         }
@@ -769,7 +814,7 @@ public actor RealtimeClient: TurnManagerDelegate {
 
     private func startConnectionStateMonitor() {
         Task {
-            for await isConnected in webSocket.connectionStateStream {
+            for await isConnected in await transport.connectionStateStream {
                 if !isConnected && sessionState == .connected {
                     // Unexpected disconnection
                     sessionState = .disconnected
@@ -1057,6 +1102,9 @@ public struct RealtimeClientConfiguration: Sendable {
     /// Input audio configuration (noise reduction)
     public let inputAudioConfiguration: InputAudioConfiguration?
 
+    /// Transport type for connecting to the Realtime API
+    public let transportType: RealtimeTransportType
+
     /// Creates a configuration
     /// - Parameters:
     ///   - model: Realtime model (MUST be .gptRealtime or .gptRealtimeMini)
@@ -1071,6 +1119,7 @@ public struct RealtimeClientConfiguration: Sendable {
     ///   - defaultAudioOutput: Default audio output device
     ///   - echoProtection: Echo protection configuration
     ///   - inputAudioConfiguration: Input audio configuration (noise reduction)
+    ///   - transportType: Transport type (WebSocket or WebRTC)
     public init(
         model: RealtimeModel,
         voice: VoiceType = .alloy,
@@ -1083,7 +1132,8 @@ public struct RealtimeClientConfiguration: Sendable {
         maxOutputTokens: Int? = nil,
         defaultAudioOutput: AudioOutputDeviceType? = nil,
         echoProtection: EchoProtectionConfiguration? = nil,
-        inputAudioConfiguration: InputAudioConfiguration? = nil
+        inputAudioConfiguration: InputAudioConfiguration? = nil,
+        transportType: RealtimeTransportType = .webSocket
     ) {
         self.model = model
         self.voice = voice
@@ -1097,6 +1147,7 @@ public struct RealtimeClientConfiguration: Sendable {
         self.defaultAudioOutput = defaultAudioOutput
         self.echoProtection = echoProtection
         self.inputAudioConfiguration = inputAudioConfiguration
+        self.transportType = transportType
     }
 
     /// Default configuration using gpt-realtime model

@@ -20,6 +20,9 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-async-algorithms.git", from: "1.0.0"),
         // Swift Testing framework
         .package(url: "https://github.com/apple/swift-testing.git", from: "0.10.0")
+        // Note: WebRTC support requires adding a WebRTC dependency.
+        // The WebRTC transport will fail gracefully if no WebRTC framework is available.
+        // To enable WebRTC, add: .package(url: "https://github.com/nicolo-ribaudo/AmazonChimeSDK-SPM.git", exact: "0.23.5")
     ],
     targets: [
         .target(
