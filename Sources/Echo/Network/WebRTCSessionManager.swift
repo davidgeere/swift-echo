@@ -48,9 +48,18 @@ public actor WebRTCSessionManager {
             self.instructions = instructions
             
             // Convert to JSON strings for Sendable compliance
-            if let turnDetection = turnDetection,
-               let data = try? JSONSerialization.data(withJSONObject: turnDetection) {
-                self.turnDetectionJSON = String(data: data, encoding: .utf8)
+            // Round threshold to avoid floating-point precision issues
+            if var turnDetection = turnDetection {
+                // Round threshold to 6 decimal places to avoid API precision errors
+                if let threshold = turnDetection["threshold"] as? Double {
+                    let roundedThreshold = (threshold * 1_000_000).rounded() / 1_000_000
+                    turnDetection["threshold"] = roundedThreshold
+                }
+                if let data = try? JSONSerialization.data(withJSONObject: turnDetection) {
+                    self.turnDetectionJSON = String(data: data, encoding: .utf8)
+                } else {
+                    self.turnDetectionJSON = nil
+                }
             } else {
                 self.turnDetectionJSON = nil
             }
