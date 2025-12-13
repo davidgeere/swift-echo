@@ -149,13 +149,8 @@ public actor WebRTCSessionManager {
                 session["instructions"] = instructions
             }
             
-            // SOLVE-5: Add output_audio_transcription at SESSION root level for model speech transcripts
-            if let transcriptionJSON = transcriptionJSON,
-               let transcriptionData = transcriptionJSON.data(using: .utf8),
-               let transcription = try? JSONSerialization.jsonObject(with: transcriptionData) as? [String: Any] {
-                session["output_audio_transcription"] = transcription
-                print("[DEBUG-SOLVE-5] 🎙️ Added output_audio_transcription to session: \(transcription)")
-            }
+            // NOTE: Model audio transcripts come automatically via response.output_audio_transcript.delta events
+            // No special session configuration needed - just listen for the correct event name
             
             // #region agent log SOLVE-1
             print("[DEBUG-SOLVE-1] 🔧 toJSON() called - applying threshold fix")
