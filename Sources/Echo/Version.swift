@@ -11,7 +11,7 @@ import Foundation
 /// Echo library version information
 public enum EchoVersion {
     /// Current version of the Echo library
-    public static let current = Version(major: 1, minor: 6, patch: 1)
+    public static let current = Version(major: 1, minor: 7, patch: 0)
     
     /// Version string (e.g., "1.0.0")
     public static var string: String {
@@ -81,6 +81,31 @@ public struct BuildInfo: Sendable {
 extension EchoVersion {
     /// Version history with release notes
     public static let history: [(version: Version, date: String, notes: String)] = [
+        (
+            version: Version(major: 1, minor: 7, patch: 0),
+            date: "2025-12-12",
+            notes: """
+            🎯 Correlation-Based Echo Cancellation
+            
+            New Features:
+            • EchoCanceller actor for waveform pattern matching
+            • Cross-correlation algorithm to detect echo by comparing mic input with played audio
+            • Handles loud echo (phone near speaker) and quiet user speech
+            • Three echo protection modes: threshold, correlation, hybrid
+            • EchoCancellerConfiguration with multiple presets (default, aggressive, conservative)
+            • Automatic delay search (5-100ms) to find echo in room acoustics
+            
+            Updated Presets:
+            • EchoConfiguration.speakerOptimized now uses hybrid mode
+            • New EchoConfiguration.correlationOptimized preset
+            • RealtimeClientConfiguration.correlationOptimized preset
+            
+            API Changes:
+            • AudioCaptureProtocol: Added setEchoCanceller() method
+            • AudioPlaybackProtocol: Added setEchoCanceller() method
+            • EchoProtectionConfiguration: Added mode and correlationConfig properties
+            """
+        ),
         (
             version: Version(major: 1, minor: 6, patch: 1),
             date: "2025-12-10",

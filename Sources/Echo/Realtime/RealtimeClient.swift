@@ -54,6 +54,9 @@ public actor RealtimeClient: TurnManagerDelegate {
     /// Task for delayed gating disable after assistant stops speaking
     private var postSpeechGatingTask: Task<Void, Never>?
 
+    /// Echo canceller for correlation-based echo detection
+    private var echoCanceller: EchoCanceller?
+
     // Stored for cleanup
     #if os(iOS)
     private var routeChangeObserver: NSObjectProtocol?
@@ -326,6 +329,16 @@ public actor RealtimeClient: TurnManagerDelegate {
                 }
             }
 
+            // Set up correlation-based echo cancellation if configured
+            if let echoProtection = configuration.echoProtection,
+               echoProtection.usesCorrelation,
+               let correlationConfig = echoProtection.correlationConfig {
+                let canceller = EchoCanceller(configuration: correlationConfig)
+                self.echoCanceller = canceller
+                await capture.setEchoCanceller(canceller)
+                await playback.setEchoCanceller(canceller)
+            }
+
             // Set up route change observer for audio output changes
             #if os(iOS)
             await observeAudioRouteChanges()
@@ -359,6 +372,10 @@ public actor RealtimeClient: TurnManagerDelegate {
         isAssistantSpeaking = false
         postSpeechGatingTask?.cancel()
         postSpeechGatingTask = nil
+
+        // Clean up echo canceller
+        await echoCanceller?.deactivate()
+        echoCanceller = nil
 
         // Emit audio stopped event if audio was started
         if wasStarted {
@@ -558,8 +575,7 @@ public actor RealtimeClient: TurnManagerDelegate {
     /// Enables echo protection gating on audio capture
     private func enableEchoProtectionGating() async {
         guard let echoProtection = configuration.echoProtection,
-            echoProtection.enabled,
-            let capture = audioCapture
+            echoProtection.enabled
         else {
             return
         }
@@ -568,8 +584,15 @@ public actor RealtimeClient: TurnManagerDelegate {
         postSpeechGatingTask?.cancel()
         postSpeechGatingTask = nil
 
-        // Enable gating with configured threshold
-        await capture.enableGating(threshold: echoProtection.bargeInThreshold)
+        // Enable threshold-based gating if configured
+        if echoProtection.usesThreshold, let capture = audioCapture {
+            await capture.enableGating(threshold: echoProtection.bargeInThreshold)
+        }
+
+        // Activate correlation-based echo canceller if configured
+        if echoProtection.usesCorrelation {
+            await echoCanceller?.activate()
+        }
     }
 
     /// Disables echo protection gating on audio capture after delay
@@ -588,7 +611,16 @@ public actor RealtimeClient: TurnManagerDelegate {
             do {
                 try await Task.sleep(for: echoProtection.postSpeechDelay)
                 guard !Task.isCancelled else { return }
-                await self?.audioCapture?.disableGating()
+
+                // Disable threshold-based gating
+                if echoProtection.usesThreshold {
+                    await self?.audioCapture?.disableGating()
+                }
+
+                // Deactivate correlation-based echo canceller
+                if echoProtection.usesCorrelation {
+                    await self?.echoCanceller?.deactivate()
+                }
             } catch {
                 // Task was cancelled
             }
@@ -1087,7 +1119,9 @@ public struct RealtimeClientConfiguration: Sendable {
         startAudioAutomatically: true
     )
 
-    /// Speaker-optimized configuration with echo protection
+    /// Speaker-optimized configuration with correlation-based echo protection
+    ///
+    /// Uses hybrid echo protection (threshold + correlation) for maximum robustness.
     public static let speakerOptimized = RealtimeClientConfiguration(
         model: .gptRealtime,
         voice: .alloy,
@@ -1096,7 +1130,22 @@ public struct RealtimeClientConfiguration: Sendable {
         enableTranscription: true,
         startAudioAutomatically: true,
         defaultAudioOutput: .smart,
-        echoProtection: .default,
+        echoProtection: .hybrid,
+        inputAudioConfiguration: .farField
+    )
+
+    /// Configuration optimized for correlation-based echo cancellation
+    ///
+    /// Uses pure correlation mode (waveform pattern matching) for best accuracy.
+    public static let correlationOptimized = RealtimeClientConfiguration(
+        model: .gptRealtime,
+        voice: .alloy,
+        audioFormat: .pcm16,
+        turnDetection: .automatic(.speakerOptimized),
+        enableTranscription: true,
+        startAudioAutomatically: true,
+        defaultAudioOutput: .smart,
+        echoProtection: .correlationDefault,
         inputAudioConfiguration: .farField
     )
 }

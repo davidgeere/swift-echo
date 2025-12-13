@@ -49,6 +49,21 @@ public actor AudioCapture: AudioCaptureProtocol {
         return gatingState.withLock { $0.isEnabled }
     }
 
+    // MARK: - Echo Cancellation Properties
+
+    /// Echo canceller for correlation-based filtering (thread-safe via lock)
+    private let echoCancellerLock = OSAllocatedUnfairLock<EchoCanceller?>(initialState: nil)
+
+    /// Sets the echo canceller for correlation-based filtering
+    ///
+    /// When set, the capture will use the echo canceller to detect and suppress
+    /// audio that correlates with recently played output audio.
+    ///
+    /// - Parameter canceller: The echo canceller to use, or nil to disable
+    public func setEchoCanceller(_ canceller: EchoCanceller?) {
+        echoCancellerLock.withLock { $0 = canceller }
+    }
+
     // MARK: - Initialization
 
     /// Creates an audio capture instance
@@ -187,9 +202,21 @@ public actor AudioCapture: AudioCaptureProtocol {
                     return
                 }
 
+                // Get echo canceller reference (thread-safe read)
+                let echoCanceller = self.echoCancellerLock.withLock { $0 }
+
                 // Process audio data for sending
-                Task { [weak self, onAudioChunk] in
+                Task { [weak self, onAudioChunk, echoCanceller, samples] in
                     guard let self = self else { return }
+
+                    // Check correlation-based echo cancellation
+                    if let canceller = echoCanceller {
+                        let isEcho = await canceller.isEcho(samples)
+                        if isEcho {
+                            // High correlation = this is just echo from the speaker
+                            return
+                        }
+                    }
 
                     do {
                         // Convert to target format
@@ -243,6 +270,9 @@ public actor AudioCapture: AudioCaptureProtocol {
             state.isEnabled = false
             state.threshold = 0.0
         }
+
+        // Reset echo canceller reference
+        echoCancellerLock.withLock { $0 = nil }
     }
 
     /// Pauses audio capture (stops engine but keeps tap installed)

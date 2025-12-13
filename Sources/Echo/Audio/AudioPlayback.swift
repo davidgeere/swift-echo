@@ -39,6 +39,21 @@ public actor AudioPlayback: AudioPlaybackProtocol {
     public var isActive: Bool {
         return isPlaying && (playerNode?.isPlaying ?? false)
     }
+
+    // MARK: - Echo Cancellation Properties
+
+    /// Echo canceller for reference audio capture
+    private var echoCanceller: EchoCanceller?
+
+    /// Sets the echo canceller for reference audio capture
+    ///
+    /// When set, the playback will feed played audio to the echo canceller's
+    /// reference buffer, enabling correlation-based echo detection.
+    ///
+    /// - Parameter canceller: The echo canceller to use, or nil to disable
+    public func setEchoCanceller(_ canceller: EchoCanceller?) {
+        echoCanceller = canceller
+    }
     
     /// List of available audio output devices
     public var availableAudioOutputDevices: [AudioOutputDeviceType] {
@@ -391,6 +406,11 @@ public actor AudioPlayback: AudioPlaybackProtocol {
 
         guard let playbackFormat = format.makeAVAudioFormat() else {
             throw RealtimeError.unsupportedAudioFormat(format.rawValue)
+        }
+
+        // Feed audio to echo canceller reference buffer (for correlation-based echo detection)
+        if let canceller = echoCanceller {
+            await canceller.addReference(pcm16Data: audioData)
         }
 
         // Calculate frame count

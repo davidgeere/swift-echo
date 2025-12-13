@@ -5,6 +5,142 @@ All notable changes to Echo will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2025-12-12
+
+### Added
+
+#### Correlation-Based Echo Cancellation
+
+A new, more accurate approach to echo cancellation that detects echo by comparing waveform patterns rather than just audio volume. This solves two key problems with volume-based gating:
+
+- **Loud echo (phone near speaker)** - Volume gating allows it through
+- **Quiet user speech (phone held away)** - Volume gating blocks it
+
+The correlation-based approach uses cross-correlation to compare microphone input with recently played audio. If the waveforms match (high correlation), it's echo. If they don't match (low correlation), it's genuine user speech.
+
+##### New Components
+
+###### EchoCanceller Actor
+```swift
+// Create canceller with configuration
+let canceller = EchoCanceller(configuration: .default)
+
+// Activate when assistant starts speaking
+await canceller.activate()
+
+// Add reference audio (called by AudioPlayback)
+await canceller.addReference(pcm16Data: audioData)
+
+// Check if input is echo (called by AudioCapture)
+let isEcho = await canceller.isEcho(samples)  // true = suppress, false = forward
+```
+
+###### EchoCancellerConfiguration
+```swift
+EchoCancellerConfiguration(
+    enabled: true,
+    sampleRate: 24000,
+    correlationThreshold: 0.65,  // 0.0-1.0, higher = more selective
+    maxReferenceDurationMs: 500, // How much output audio to remember
+    minDelayMs: 5,               // Minimum echo delay to search
+    maxDelayMs: 100              // Maximum echo delay to search
+)
+
+// Presets
+EchoCancellerConfiguration.default      // Balanced for most environments
+EchoCancellerConfiguration.aggressive   // Lower threshold, longer buffer
+EchoCancellerConfiguration.conservative // Higher threshold, fewer false positives
+EchoCancellerConfiguration.nearField    // Phone close to face
+EchoCancellerConfiguration.farField     // Speakerphone or Bluetooth speaker
+```
+
+###### Echo Protection Modes
+```swift
+enum EchoProtectionMode {
+    case threshold    // RMS volume gating (original)
+    case correlation  // Waveform pattern matching (new)
+    case hybrid       // Both methods (most robust)
+}
+```
+
+##### Updated Configuration
+
+###### EchoProtectionConfiguration
+```swift
+// Now supports mode selection and correlation config
+EchoProtectionConfiguration(
+    enabled: true,
+    mode: .hybrid,                          // NEW
+    bargeInThreshold: 0.15,
+    postSpeechDelay: .milliseconds(300),
+    correlationConfig: .default             // NEW
+)
+
+// New presets
+EchoProtectionConfiguration.correlationDefault  // Pure correlation mode
+EchoProtectionConfiguration.hybrid              // Both methods (recommended)
+```
+
+###### Updated Presets
+- `EchoConfiguration.speakerOptimized` now uses `.hybrid` mode
+- `RealtimeClientConfiguration.speakerOptimized` now uses `.hybrid` mode
+
+###### New Presets
+- `EchoConfiguration.correlationOptimized` - Pure correlation mode
+- `RealtimeClientConfiguration.correlationOptimized` - Pure correlation mode
+
+##### How It Works
+
+```
+[Speaker Output] → [Reference Buffer] → [Cross-Correlation]
+                                              ↑
+[Microphone Input] ──────────────────────────┘
+                                              ↓
+                                    [Correlation Score]
+                                              ↓
+                                      > 0.65 = ECHO → Suppress
+                                      < 0.65 = USER → Forward
+```
+
+1. **Reference Buffer**: Keeps last 500ms of played audio
+2. **Delay Search**: Searches 5-100ms delay range for echo
+3. **Normalized Correlation**: Computes correlation coefficient (0.0-1.0)
+4. **Decision**: High correlation = echo, low correlation = real speech
+
+### Changed
+
+#### Protocol Updates
+- `AudioCaptureProtocol`: Added `setEchoCanceller(_:)` method
+- `AudioPlaybackProtocol`: Added `setEchoCanceller(_:)` method
+
+#### Configuration Updates
+- `EchoProtectionConfiguration`: Added `mode` and `correlationConfig` properties
+- Existing threshold-based configurations continue to work unchanged
+
+### Migration
+
+**Backward Compatible**: Existing code using threshold-based echo protection continues to work. The default mode is now `.threshold` for backward compatibility.
+
+**To enable correlation-based echo cancellation:**
+
+```swift
+// Option 1: Use speakerOptimized preset (now uses hybrid mode)
+let config = EchoConfiguration.speakerOptimized
+
+// Option 2: Use correlationOptimized preset
+let config = EchoConfiguration.correlationOptimized
+
+// Option 3: Custom configuration
+let config = EchoConfiguration(
+    echoProtection: EchoProtectionConfiguration(
+        mode: .correlation,
+        correlationConfig: .default
+    )
+)
+```
+
+---
+
 ## [1.6.1] - 2025-12-10
 
 ### Fixed
@@ -690,6 +826,7 @@ Echo is a unified Swift library for OpenAI's Realtime API (WebSocket-based voice
 
 ## Version History
 
+- **1.7.0** - Correlation-based echo cancellation
 - **1.6.1** - Fix: Add missing .smart case to AudioPlayback
 - **1.6.0** - Echo protection for speaker mode
 - **1.5.0** - Audio frequency analysis and level monitoring
@@ -712,6 +849,7 @@ This project follows [Semantic Versioning](https://semver.org/):
 - **MINOR** version for backwards-compatible functionality additions
 - **PATCH** version for backwards-compatible bug fixes
 
+[1.7.0]: https://github.com/davidgeere/swift-echo/releases/tag/v1.7.0
 [1.6.1]: https://github.com/davidgeere/swift-echo/releases/tag/v1.6.1
 [1.6.0]: https://github.com/davidgeere/swift-echo/releases/tag/v1.6.0
 [1.5.0]: https://github.com/davidgeere/swift-echo/releases/tag/v1.5.0

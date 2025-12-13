@@ -44,4 +44,14 @@ public protocol AudioCaptureProtocol: Actor {
 
     /// Whether audio gating is currently enabled
     var isGatingEnabled: Bool { get }
+
+    // MARK: - Echo Cancellation
+
+    /// Sets the echo canceller for correlation-based filtering
+    ///
+    /// When set, the capture will use the echo canceller to detect and suppress
+    /// audio that correlates with recently played output audio.
+    ///
+    /// - Parameter canceller: The echo canceller to use, or nil to disable
+    func setEchoCanceller(_ canceller: EchoCanceller?) async
 }
