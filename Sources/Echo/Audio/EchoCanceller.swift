@@ -81,13 +81,15 @@ public actor EchoCanceller {
     /// Adds output audio data (PCM16 format) to the reference buffer
     ///
     /// Convenience method that handles PCM16 to Float conversion.
+    /// Uses 32768.0 as divisor to properly map Int16 range [-32768, 32767] to [-1.0, ~1.0].
     ///
     /// - Parameter data: Raw PCM16 audio data (what comes from responseAudioDelta)
     public func addReference(pcm16Data data: Data) {
-        // Convert PCM16 to Float
+        // Convert PCM16 to Float using 32768.0 for proper normalization
+        // Int16.min (-32768) -> -1.0, Int16.max (32767) -> ~0.99997
         let samples = data.withUnsafeBytes { bytes -> [Float] in
             let int16Buffer = bytes.bindMemory(to: Int16.self)
-            return int16Buffer.map { Float($0) / Float(Int16.max) }
+            return int16Buffer.map { Float($0) / 32768.0 }
         }
         addReference(samples)
     }
@@ -140,13 +142,15 @@ public actor EchoCanceller {
     /// Checks if PCM16 audio data is likely echo
     ///
     /// Convenience method that handles PCM16 to Float conversion.
+    /// Uses 32768.0 as divisor to properly map Int16 range [-32768, 32767] to [-1.0, ~1.0].
     ///
     /// - Parameter data: Raw PCM16 audio data from microphone
     /// - Returns: `true` if high correlation detected (input is echo)
     public func isEcho(pcm16Data data: Data) -> Bool {
+        // Convert PCM16 to Float using 32768.0 for proper normalization
         let samples = data.withUnsafeBytes { bytes -> [Float] in
             let int16Buffer = bytes.bindMemory(to: Int16.self)
-            return int16Buffer.map { Float($0) / Float(Int16.max) }
+            return int16Buffer.map { Float($0) / 32768.0 }
         }
         return isEcho(samples)
     }
@@ -276,4 +280,3 @@ public actor EchoCanceller {
         Int(Float(referenceBuffer.count) / sampleRate * 1000)
     }
 }
-
