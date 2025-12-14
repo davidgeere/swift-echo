@@ -126,41 +126,30 @@ public actor WebRTCAudioHandler {
         let session = AVAudioSession.sharedInstance()
         
         do {
-            // Build options based on device - only speaker gets .defaultToSpeaker
+            // Base options for all modes - maintain Bluetooth and mixing support
             var options: AVAudioSession.CategoryOptions = [
                 .allowBluetooth,
                 .allowBluetoothA2DP,
                 .mixWithOthers
             ]
-            var portOverride: AVAudioSession.PortOverride = .none
             
             switch device {
             case .builtInSpeaker:
+                // Add defaultToSpeaker for speaker output
                 options.insert(.defaultToSpeaker)
-                portOverride = .speaker
+                try session.setCategory(.playAndRecord, mode: .voiceChat, options: options)
+                try session.overrideOutputAudioPort(.speaker)
                 
             case .builtInReceiver:
-                // No .defaultToSpeaker - voiceChat mode defaults to receiver
-                portOverride = .none
+                // No defaultToSpeaker - voiceChat mode routes to receiver
+                try session.setCategory(.playAndRecord, mode: .voiceChat, options: options)
+                try session.overrideOutputAudioPort(.none)
                 
-            case .bluetooth, .wiredHeadphones, .systemDefault:
-                // No .defaultToSpeaker - allow system to route to external device
-                portOverride = .none
-                
-            case .smart:
-                // Smart mode: prefer Bluetooth if available, otherwise speaker
-                let bluetoothConnected = availableAudioOutputDevices.contains { $0.isBluetooth }
-                if bluetoothConnected {
-                    portOverride = .none
-                } else {
-                    options.insert(.defaultToSpeaker)
-                    portOverride = .speaker
-                }
+            case .bluetooth, .wiredHeadphones, .systemDefault, .smart:
+                // No defaultToSpeaker - allow system to route to external device
+                try session.setCategory(.playAndRecord, mode: .voiceChat, options: options)
+                try session.overrideOutputAudioPort(.none)
             }
-            
-            // Always reconfigure category to ensure .defaultToSpeaker is properly set/cleared
-            try session.setCategory(.playAndRecord, mode: .voiceChat, options: options)
-            try session.overrideOutputAudioPort(portOverride)
             
             currentAudioOutput = device
             print("[WebRTCAudioHandler] 🔊 Audio output set to: \(device)")
