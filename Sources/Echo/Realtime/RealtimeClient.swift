@@ -24,9 +24,14 @@ public actor RealtimeClient: TurnManagerDelegate {
     // TurnManager for proper event routing
     private let turnManager: TurnManager?
 
-    private var webSocket: WebSocketManager
+    /// The transport layer (WebSocket or WebRTC)
+    private var transport: any RealtimeTransportProtocol
+    
     private var audioCapture: (any AudioCaptureProtocol)?
     private var audioPlayback: (any AudioPlaybackProtocol)?
+    
+    /// Hardware-level audio monitor for visualization (transport-agnostic)
+    private var audioLevelMonitor: AudioLevelMonitor?
 
     // Optional factory closures for creating audio components
     // Allows dependency injection while supporting both concrete and mock implementations
@@ -96,9 +101,16 @@ public actor RealtimeClient: TurnManagerDelegate {
         self.turnManager = turnManager
         self.toolExecutor = toolExecutor
         self.delegate = delegate
-        self.webSocket = WebSocketManager()
         self.audioCaptureFactory = audioCaptureFactory
         self.audioPlaybackFactory = audioPlaybackFactory
+
+        // Create transport based on configuration
+        switch configuration.transportType {
+        case .webSocket:
+            self.transport = WebSocketTransport()
+        case .webRTC:
+            self.transport = WebRTCTransport()
+        }
 
         // Wire up TurnManager delegate to self for interruption handling
         Task {
@@ -180,40 +192,45 @@ public actor RealtimeClient: TurnManagerDelegate {
             )
         }
 
-        // Build WebSocket URL with model parameter
-        guard let url = URL(string: "wss://api.openai.com/v1/realtime?model=\(modelString)") else {
-            sessionState = .failed
-            throw RealtimeError.connectionFailed(
-                NSError(domain: "RealtimeClient", code: -1, userInfo: [
-                    NSLocalizedDescriptionKey: "Invalid WebSocket URL"
-                ])
-            )
-        }
-
-        // Connect to WebSocket
+        // Connect using the transport layer
         do {
             // CRITICAL: Start event listeners BEFORE connecting
             // to ensure we don't miss session.created
             startEventListener()
             startConnectionStateMonitor()
 
-            try await webSocket.connect(
-                to: url,
-                headers: [
-                    "Authorization": "Bearer \(apiKey)",
-                    "OpenAI-Beta": "realtime=v1"
-                ]
+            // Build session config for transport (as JSON string for Sendable compliance)
+            let sessionConfigJSON = buildSessionConfigJSON()
+            
+            // Connect via transport (WebSocket or WebRTC)
+            // For WebSocket: builds URL and connects with API key
+            // For WebRTC: fetches ephemeral key, exchanges SDP (all invisible to developer)
+            try await transport.connect(
+                apiKey: apiKey,
+                model: modelString,
+                sessionConfigJSON: sessionConfigJSON
             )
 
             // Wait for session.created event (up to 10 seconds)
             try await waitForSessionCreated()
 
-            // Configure session
-            try await configureSession()
+            // Check if transport handles audio natively
+            let handlesAudioNatively = await transport.handlesAudioNatively
 
-            // Start audio if configured
-            if configuration.startAudioAutomatically {
+            // Configure session (only for WebSocket - WebRTC sends config in connect)
+            if !handlesAudioNatively {
+                try await configureSession()
+            }
+
+            // Start audio if configured (only for WebSocket - WebRTC handles audio natively)
+            if configuration.startAudioAutomatically && !handlesAudioNatively {
                 try await startAudio()
+            }
+            
+            // SOLVE-6: Start hardware-level audio monitoring for BOTH transports
+            // This provides level data for UI visualization regardless of WebSocket or WebRTC
+            if configuration.startAudioAutomatically {
+                try await startAudioLevelMonitor()
             }
 
             sessionState = .connected
@@ -223,10 +240,57 @@ public actor RealtimeClient: TurnManagerDelegate {
 
         } catch {
             sessionState = .failed
-            // Clean up WebSocket on failure
-            await webSocket.disconnect()
+            // Clean up transport on failure
+            await transport.disconnect()
             throw RealtimeError.connectionFailed(error)
         }
+    }
+    
+    /// Builds session configuration as JSON string for transport
+    private func buildSessionConfigJSON() -> String? {
+        var config: [String: Any] = [:]
+        
+        if let instructions = configuration.instructions {
+            config["instructions"] = instructions
+        }
+        
+        config["voice"] = configuration.voice.rawValue
+        
+        if let turnDetection = configuration.turnDetection,
+           let turnDetectionConfig = turnDetection.toRealtimeFormat() {
+            config["turn_detection"] = turnDetectionConfig
+        }
+        
+        // SOLVE-4: Add transcription configuration for WebRTC
+        // Default to whisper-1 which is the standard transcription model
+        config["transcription"] = [
+            "model": "whisper-1"
+        ]
+        
+        // Convert tools to config format
+        if !tools.isEmpty {
+            config["tools"] = tools.compactMap { tool -> [String: Any]? in
+                // Convert ToolParameters to a serializable dictionary
+                guard let parametersDict = try? tool.parameters.toJSONSchema().toDictionary() else {
+                    return nil
+                }
+                return [
+                    "type": "function",
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": parametersDict
+                ]
+            }
+        }
+        
+        // Convert to JSON string for Sendable compliance
+        guard !config.isEmpty,
+              let jsonData = try? JSONSerialization.data(withJSONObject: config),
+              let jsonString = String(data: jsonData, encoding: .utf8) else {
+            return nil
+        }
+        
+        return jsonString
     }
 
     /// Disconnects from the Realtime API
@@ -248,8 +312,8 @@ public actor RealtimeClient: TurnManagerDelegate {
         }
         #endif
 
-        // Close WebSocket
-        await webSocket.disconnect()
+        // Close transport (WebSocket or WebRTC)
+        await transport.disconnect()
 
         sessionState = .disconnected
         sessionId = nil
@@ -272,7 +336,7 @@ public actor RealtimeClient: TurnManagerDelegate {
 
         do {
             let json = try event.toJSON()
-            try await webSocket.send(json)
+            try await transport.send(eventJSON: json)
         } catch {
             throw RealtimeError.eventEncodingFailed(error)
         }
@@ -367,6 +431,10 @@ public actor RealtimeClient: TurnManagerDelegate {
         await audioPlayback?.stop()
         audioCapture = nil
         audioPlayback = nil
+        
+        // Stop hardware level monitor
+        await audioLevelMonitor?.stop()
+        audioLevelMonitor = nil
 
         // Reset echo protection state
         isAssistantSpeaking = false
@@ -382,11 +450,67 @@ public actor RealtimeClient: TurnManagerDelegate {
             await eventEmitter.emit(.audioStopped)
         }
     }
+    
+    /// Starts transport-agnostic audio monitoring for visualization
+    ///
+    /// This sets up audio level monitoring that works for both WebSocket and WebRTC:
+    /// - **Input levels**: Hardware microphone tap (shared by both transports)
+    /// - **Output levels**: 
+    ///   - WebSocket: Fed from response.audio.delta events
+    ///   - WebRTC: Polled from WebRTC stats API
+    ///
+    /// The level data is emitted via inputLevelsChanged and outputLevelsChanged events.
+    private func startAudioLevelMonitor() async throws {
+        let monitor = AudioLevelMonitor()
+        
+        // Start the monitor (sets up hardware mic tap for input)
+        try await monitor.start()
+        self.audioLevelMonitor = monitor
+        
+        // Forward input levels from hardware mic to event emitter
+        Task {
+            for await levels in monitor.inputLevelStream {
+                await self.eventEmitter.emit(.inputLevelsChanged(levels: levels))
+            }
+        }
+        
+        // Forward output levels to event emitter
+        // For WebSocket: levels come from processOutputAudio() via monitor.outputLevelStream
+        // For WebRTC: levels come from WebRTCTransport.outputLevelStream
+        Task {
+            for await levels in monitor.outputLevelStream {
+                await self.eventEmitter.emit(.outputLevelsChanged(levels: levels))
+            }
+        }
+        
+        // For WebRTC: Also listen to the transport's output level stream
+        if let webrtcTransport = transport as? WebRTCTransport {
+            let outputStream = webrtcTransport.outputLevelStream
+            Task {
+                for await levels in outputStream {
+                    await self.eventEmitter.emit(.outputLevelsChanged(levels: levels))
+                }
+            }
+            print("[RealtimeClient] ✅ Started WebRTC output level monitoring")
+        }
+        
+        print("[RealtimeClient] ✅ Started audio level monitoring (transport-agnostic)")
+    }
 
     /// Mutes or unmutes audio input
     /// - Parameter muted: Whether to mute the microphone
     /// - Throws: RealtimeError if audio capture is not active
     public func setMuted(_ muted: Bool) async throws {
+        // #region agent log SOLVE-3
+        print("[DEBUG-SOLVE-3] 🔧 setMuted called, muted=\(muted), handlesAudioNatively=\(await transport.handlesAudioNatively)")
+        // #endregion
+        
+        // SOLVE-3: Route through WebRTC transport when it handles audio natively
+        if await transport.handlesAudioNatively {
+            await transport.setLocalAudioMuted(muted)
+            return
+        }
+        
         guard let capture = audioCapture else {
             throw RealtimeError.audioCaptureFailed(
                 NSError(domain: "RealtimeClient", code: -1, userInfo: [
@@ -406,6 +530,21 @@ public actor RealtimeClient: TurnManagerDelegate {
     /// - Parameter device: The audio output device to use
     /// - Throws: RealtimeError if audio playback is not active
     public func setAudioOutput(device: AudioOutputDeviceType) async throws {
+        // #region agent log SOLVE-3
+        print("[DEBUG-SOLVE-3] 🔧 setAudioOutput called, device=\(device), handlesAudioNatively=\(await transport.handlesAudioNatively)")
+        // #endregion
+        
+        // SOLVE-3: Route through WebRTC audio handler when it handles audio natively
+        if await transport.handlesAudioNatively {
+            // WebRTC handles audio through its own audio session
+            // Use the WebRTCAudioHandler to change output device
+            if let webrtcTransport = transport as? WebRTCTransport {
+                try await webrtcTransport.audioHandler.setAudioOutput(device: device)
+                await eventEmitter.emit(.audioOutputChanged(device: device))
+            }
+            return
+        }
+        
         guard let playback = audioPlayback else {
             throw RealtimeError.audioPlaybackFailed(
                 NSError(domain: "RealtimeClient", code: -2, userInfo: [
@@ -761,7 +900,7 @@ public actor RealtimeClient: TurnManagerDelegate {
 
     private func startEventListener() {
         Task {
-            for await message in webSocket.messageStream {
+            for await message in await transport.eventStream {
                 await handleServerMessage(message)
             }
         }
@@ -769,7 +908,7 @@ public actor RealtimeClient: TurnManagerDelegate {
 
     private func startConnectionStateMonitor() {
         Task {
-            for await isConnected in webSocket.connectionStateStream {
+            for await isConnected in await transport.connectionStateStream {
                 if !isConnected && sessionState == .connected {
                     // Unexpected disconnection
                     sessionState = .disconnected
@@ -851,6 +990,9 @@ public actor RealtimeClient: TurnManagerDelegate {
 
         // Audio response
         case .responseAudioDelta(_, _, _, _, let delta):
+            // DEBUG: Log that we received audio delta
+            print("[DEBUG-LEVELS] 📢 Received responseAudioDelta, delta length: \(delta.count) chars")
+            
             // Enable echo protection gating when assistant starts producing audio
             if !isAssistantSpeaking {
                 isAssistantSpeaking = true
@@ -859,8 +1001,14 @@ public actor RealtimeClient: TurnManagerDelegate {
 
             // Emit speaking status when audio starts
             await eventEmitter.emit(.audioStatusChanged(status: .speaking))
+            
+            // Feed output audio to level monitor (works for BOTH transports)
+            // This calculates and emits outputLevelsChanged events
+            print("[DEBUG-LEVELS] 📢 Calling processOutputAudio...")
+            await audioLevelMonitor?.processOutputAudio(base64Audio: delta)
 
-            // Play audio chunk
+            // For WebSocket: Play audio chunk manually
+            // For WebRTC: Audio plays through native tracks, we just emit the event
             if let playback = audioPlayback {
                 // Decode base64 to Data for the event
                 if let audioData = Data(base64Encoded: delta) {
@@ -868,6 +1016,11 @@ public actor RealtimeClient: TurnManagerDelegate {
                 }
 
                 try? await playback.enqueue(base64Audio: delta)
+            } else {
+                // WebRTC mode - still emit the audio delta event
+                if let audioData = Data(base64Encoded: delta) {
+                    await eventEmitter.emit(.assistantAudioDelta(audioChunk: audioData))
+                }
             }
 
         case .responseAudioTranscriptDelta(_, let itemId, _, _, let delta):
@@ -1057,6 +1210,9 @@ public struct RealtimeClientConfiguration: Sendable {
     /// Input audio configuration (noise reduction)
     public let inputAudioConfiguration: InputAudioConfiguration?
 
+    /// Transport type for connecting to the Realtime API
+    public let transportType: RealtimeTransportType
+
     /// Creates a configuration
     /// - Parameters:
     ///   - model: Realtime model (MUST be .gptRealtime or .gptRealtimeMini)
@@ -1071,6 +1227,7 @@ public struct RealtimeClientConfiguration: Sendable {
     ///   - defaultAudioOutput: Default audio output device
     ///   - echoProtection: Echo protection configuration
     ///   - inputAudioConfiguration: Input audio configuration (noise reduction)
+    ///   - transportType: Transport type (WebSocket or WebRTC)
     public init(
         model: RealtimeModel,
         voice: VoiceType = .alloy,
@@ -1083,7 +1240,8 @@ public struct RealtimeClientConfiguration: Sendable {
         maxOutputTokens: Int? = nil,
         defaultAudioOutput: AudioOutputDeviceType? = nil,
         echoProtection: EchoProtectionConfiguration? = nil,
-        inputAudioConfiguration: InputAudioConfiguration? = nil
+        inputAudioConfiguration: InputAudioConfiguration? = nil,
+        transportType: RealtimeTransportType = .webRTC
     ) {
         self.model = model
         self.voice = voice
@@ -1097,6 +1255,7 @@ public struct RealtimeClientConfiguration: Sendable {
         self.defaultAudioOutput = defaultAudioOutput
         self.echoProtection = echoProtection
         self.inputAudioConfiguration = inputAudioConfiguration
+        self.transportType = transportType
     }
 
     /// Default configuration using gpt-realtime model

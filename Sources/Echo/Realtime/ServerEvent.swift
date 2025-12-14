@@ -267,6 +267,21 @@ public enum ServerEvent: Sendable {
                 delta: delta
             )
 
+        // SOLVE-5: GA API uses different event name for model audio transcripts
+        case "response.output_audio_transcript.delta":
+            let responseId = data["response_id"] as? String ?? ""
+            let itemId = data["item_id"] as? String ?? ""
+            let outputIndex = data["output_index"] as? Int ?? 0
+            let contentIndex = data["content_index"] as? Int ?? 0
+            let delta = data["delta"] as? String ?? ""
+            return .responseAudioTranscriptDelta(
+                responseId: responseId,
+                itemId: itemId,
+                outputIndex: outputIndex,
+                contentIndex: contentIndex,
+                delta: delta
+            )
+
         case "response.audio.done":
             let responseId = data["response_id"] as? String ?? ""
             let itemId = data["item_id"] as? String ?? ""

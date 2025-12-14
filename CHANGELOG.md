@@ -5,6 +5,133 @@ All notable changes to Echo will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2025-12-14
+
+### Fixed
+
+#### WebRTC Audio Output
+- **Remote audio track now enabled** - Fixed issue where WebRTC audio wasn't playing through the speaker. The remote audio track from OpenAI's Realtime API now properly plays through the device speakers.
+
+#### WebRTC Audio Level Monitoring
+- **Fixed RTCStatistics parsing** - The `type` property is accessed directly on `RTCStatistics` object, not from the `values` dictionary. This was causing all stats to show as "unknown" type.
+- **Output levels now working** - WebRTC transport now properly emits `outputLevelsChanged` events via stats API polling, matching the same events emitted by WebSocket transport.
+
+### Changed
+
+- **Unified audio level events** - Both WebSocket and WebRTC transports now emit the same `EchoEvent.inputLevelsChanged` and `EchoEvent.outputLevelsChanged` events. Your UI subscribes to one event stream regardless of transport.
+- **WebRTC is now the default transport** - New projects will use WebRTC by default for lower latency and better audio quality.
+
+### Technical Details
+
+The WebRTC output level monitoring works by:
+1. Polling `RTCPeerConnection.statistics()` every 50ms
+2. Finding `inbound-rtp` stats with `kind == "audio"`
+3. Extracting `audioLevel` (0.0-1.0) or calculating from `totalAudioEnergy`
+4. Emitting via `outputLevelStream` → `EchoEvent.outputLevelsChanged`
+
+## [1.8.0] - 2025-12-13
+
+### Added
+
+#### WebRTC Transport Layer
+
+A native WebRTC transport as an alternative to WebSocket, providing lower latency and hardware-accelerated echo cancellation.
+
+##### Why WebRTC?
+
+| Aspect | WebSocket | WebRTC |
+|--------|-----------|--------|
+| Audio Format | Base64-encoded chunks | Native media tracks |
+| Latency | Higher (encoding overhead) | Lower (direct connection) |
+| Echo Cancellation | Software-based | Hardware-accelerated |
+| Connection | Direct WebSocket | SDP exchange via REST |
+
+##### Same API, Different Transport
+
+```swift
+// Just add transportType: .webRTC - everything else is identical!
+let config = EchoConfiguration(
+    defaultMode: .audio,
+    transportType: .webRTC  // ← The only change
+)
+
+let echo = Echo(key: apiKey, configuration: config)
+
+// Same API, same events, same transcriptions
+let conversation = try await echo.startConversation(mode: .audio)
+
+for await event in echo.events {
+    switch event {
+    case .userTranscriptionCompleted(let transcript, _):
+        // Transcriptions work exactly the same
+        print("User said: \(transcript)")
+    case .messageFinalized(let message):
+        // Messages flow through the same queue
+        print("Message: \(message.text)")
+    default:
+        break
+    }
+}
+```
+
+##### How It Works Internally
+
+When you use `.webRTC` transport, Echo handles all the complexity invisibly:
+
+1. **Ephemeral Key** - Your API key is used to fetch a short-lived ephemeral key from `/v1/realtime/client_secrets`
+2. **SDP Exchange** - Echo creates a WebRTC offer and exchanges it with OpenAI via `/v1/realtime/calls`
+3. **Peer Connection** - RTCPeerConnection is established with native audio tracks
+4. **Data Channel** - Events (transcriptions, responses) flow through RTCDataChannel
+5. **Audio** - Mic input and speaker output use native WebRTC tracks (no base64!)
+
+##### New Types
+
+- `WebRTCTransport` - Full WebRTC implementation with RTCPeerConnection
+- `WebRTCSessionManager` - Handles ephemeral key fetching and SDP exchange
+- `WebRTCAudioHandler` - Manages audio session and track configuration
+- `RealtimeTransportType` - Enum with `.webSocket` and `.webRTC` options
+- `RealtimeTransportProtocol` - Abstraction for transport layer implementations
+
+##### Configuration Options
+
+```swift
+// Default: WebSocket (backward compatible)
+let wsConfig = EchoConfiguration(
+    transportType: .webSocket  // or just omit it
+)
+
+// New: WebRTC with native audio
+let rtcConfig = EchoConfiguration(
+    defaultMode: .audio,
+    transportType: .webRTC,
+    // All other options work the same:
+    voice: .alloy,
+    turnDetection: .automatic(.speakerOptimized),
+    echoProtection: .hybrid
+)
+
+// Speaker-optimized with WebRTC
+let speakerRTC = EchoConfiguration(
+    defaultMode: .audio,
+    defaultAudioOutput: .smart,
+    transportType: .webRTC,
+    inputAudioConfiguration: .farField,
+    echoProtection: .hybrid,
+    turnDetection: .automatic(.speakerOptimized)
+)
+```
+
+### Changed
+
+- `RealtimeClient` now uses `RealtimeTransportProtocol` abstraction
+- `WebSocketManager` functionality refactored to `WebSocketTransport`
+
+### Dependencies
+
+- Added `stasel/WebRTC` (v126.0.0) - Google WebRTC framework for Swift/iOS
+
+---
+
 ## [1.7.1] - 2025-12-12
 
 ### Fixed
