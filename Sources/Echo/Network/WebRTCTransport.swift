@@ -435,7 +435,10 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
     }
     
     private func handleRemoteAudioTrack(_ track: RTCAudioTrack) {
-        print("[WebRTCTransport] 🔊 Remote audio track received, starting level monitoring")
+        print("[WebRTCTransport] 🔊 Remote audio track received, enabling playback")
+        
+        // Enable the track so audio plays through the speaker
+        track.isEnabled = true
         self.remoteAudioTrack = track
         
         // Start polling WebRTC stats for audio levels
@@ -479,6 +482,8 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
             let smoothingFactor: Float = 0.3
             var pollCount = 0
             
+            print("[DEBUG-LEVELS] 🔄 WebRTC stats polling started")
+            
             while !Task.isCancelled {
                 // Poll every ~50ms (20 times per second for smooth visualization)
                 try? await Task.sleep(nanoseconds: 50_000_000)
@@ -492,42 +497,26 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
                 }
                 
                 guard let stats = stats else {
-                    // #region agent log H-STATS-NIL
-                    if pollCount <= 3 {
-                        let logNil = "{\"hypothesisId\":\"STATS-NIL\",\"location\":\"WebRTCTransport.swift:polling\",\"message\":\"stats is nil\",\"data\":{\"pollCount\":\(pollCount)},\"timestamp\":\(Int(Date().timeIntervalSince1970 * 1000)),\"sessionId\":\"debug-session\"}\n"
-                        if let data = logNil.data(using: .utf8), let handle = FileHandle(forWritingAtPath: "/Users/davidgeere/Development/swift-echo/.cursor/debug.log") {
-                            handle.seekToEndOfFile()
-                            handle.write(data)
-                            handle.closeFile()
-                        }
+                    if pollCount <= 5 {
+                        print("[DEBUG-LEVELS] ⚠️ WebRTC stats nil (poll #\(pollCount))")
                     }
-                    // #endregion
                     continue
                 }
                 
-                // #region agent log H-ABCD - Log all stat types on first few polls
+                // Log available stats on first few polls
                 if pollCount <= 3 {
-                    var allStats: [[String: Any]] = []
+                    print("[DEBUG-LEVELS] 📊 WebRTC stats poll #\(pollCount): \(stats.statistics.count) stat entries")
                     for (key, stat) in stats.statistics {
                         let type = stat.values["type"] as? String ?? "unknown"
                         let kind = stat.values["kind"] as? String ?? "n/a"
-                        let keys = Array(stat.values.keys)
-                        allStats.append(["key": key, "type": type, "kind": kind, "availableKeys": keys])
-                    }
-                    // Serialize to JSON-safe string
-                    let statsJson = (try? JSONSerialization.data(withJSONObject: allStats)) ?? Data()
-                    let statsStr = String(data: statsJson, encoding: .utf8)?.replacingOccurrences(of: "\"", with: "\\\"") ?? "[]"
-                    let logABCD = "{\"hypothesisId\":\"ABCD\",\"location\":\"WebRTCTransport.swift:polling\",\"message\":\"all stats\",\"data\":{\"pollCount\":\(pollCount),\"statCount\":\(stats.statistics.count),\"stats\":\"\(statsStr)\"},\"timestamp\":\(Int(Date().timeIntervalSince1970 * 1000)),\"sessionId\":\"debug-session\"}\n"
-                    if let data = logABCD.data(using: .utf8), let handle = FileHandle(forWritingAtPath: "/Users/davidgeere/Development/swift-echo/.cursor/debug.log") {
-                        handle.seekToEndOfFile()
-                        handle.write(data)
-                        handle.closeFile()
+                        print("[DEBUG-LEVELS]   - \(key): type=\(type), kind=\(kind)")
                     }
                 }
-                // #endregion
                 
                 // Find inbound-rtp stats for audio
                 var audioLevel: Float = 0
+                var foundInboundAudio = false
+                
                 for (_, stat) in stats.statistics {
                     // Look for inbound audio track stats
                     if let type = stat.values["type"] as? String,
@@ -535,23 +524,20 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
                        let kind = stat.values["kind"] as? String,
                        kind == "audio" {
                         
-                        // #region agent log H-FOUND-INBOUND
+                        foundInboundAudio = true
+                        
+                        // Log available keys on first few polls
                         if pollCount <= 3 {
-                            let allKeys = Array(stat.values.keys)
-                            let keysStr = allKeys.joined(separator: ",")
-                            let logFound = "{\"hypothesisId\":\"FOUND-INBOUND\",\"location\":\"WebRTCTransport.swift:polling\",\"message\":\"found inbound-rtp audio\",\"data\":{\"keys\":\"\(keysStr)\"},\"timestamp\":\(Int(Date().timeIntervalSince1970 * 1000)),\"sessionId\":\"debug-session\"}\n"
-                            if let data = logFound.data(using: .utf8), let handle = FileHandle(forWritingAtPath: "/Users/davidgeere/Development/swift-echo/.cursor/debug.log") {
-                                handle.seekToEndOfFile()
-                                handle.write(data)
-                                handle.closeFile()
-                            }
+                            let allKeys = Array(stat.values.keys).sorted()
+                            print("[DEBUG-LEVELS] ✅ Found inbound-rtp audio, keys: \(allKeys.joined(separator: ", "))")
                         }
-                        // #endregion
                         
                         // Try to get audio level (0.0-1.0)
                         if let level = stat.values["audioLevel"] as? Double {
                             audioLevel = Float(level)
-                            print("[DEBUG-LEVELS] 🔊 WebRTC stats audioLevel: \(audioLevel)")
+                            if pollCount % 20 == 0 { // Log every ~1 second
+                                print("[DEBUG-LEVELS] 🔊 WebRTC audioLevel: \(String(format: "%.3f", audioLevel))")
+                            }
                         }
                         // Alternative: get total audio energy and calculate level
                         else if let totalEnergy = stat.values["totalAudioEnergy"] as? Double,
@@ -560,10 +546,18 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
                             // RMS level approximation from energy
                             let avgEnergy = totalEnergy / totalDuration
                             audioLevel = Float(sqrt(avgEnergy))
-                            print("[DEBUG-LEVELS] 🔊 WebRTC stats calculated level: \(audioLevel)")
+                            if pollCount % 20 == 0 { // Log every ~1 second
+                                print("[DEBUG-LEVELS] 🔊 WebRTC calculated level: \(String(format: "%.3f", audioLevel)) (energy: \(String(format: "%.6f", totalEnergy)))")
+                            }
+                        } else if pollCount <= 3 {
+                            print("[DEBUG-LEVELS] ⚠️ No audioLevel or totalAudioEnergy in inbound-rtp stats")
                         }
                         break
                     }
+                }
+                
+                if !foundInboundAudio && pollCount <= 5 {
+                    print("[DEBUG-LEVELS] ⚠️ No inbound-rtp audio stats found (poll #\(pollCount))")
                 }
                 
                 // Apply smoothing
@@ -579,11 +573,11 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
                     high: smoothedLevel * 0.1
                 )
                 
-                // Only emit if there's meaningful audio
-                if smoothedLevel > 0.001 || previousLevel > 0.001 {
-                    continuation.yield(levels)
-                }
+                // Emit levels (always emit so UI can show silence too)
+                continuation.yield(levels)
             }
+            
+            print("[DEBUG-LEVELS] 🛑 WebRTC stats polling stopped")
         }
     }
     
