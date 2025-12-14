@@ -5,6 +5,17 @@ All notable changes to Echo will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.4] - 2025-12-14
+
+### Fixed
+
+#### WebRTC Audio Output State (Critical)
+- **Fixed `currentAudioOutput` returning `.systemDefault` for WebRTC mode** - The property now correctly checks `WebRTCAudioHandler.currentAudioOutput` when using WebRTC transport, so the app always knows the actual audio output state.
+- **Fixed `availableAudioOutputDevices` returning empty for WebRTC mode** - Same fix applied to return devices from `WebRTCAudioHandler`.
+- **Fixed `.systemDefault` routing to receiver instead of speaker** - When `.systemDefault` is passed to `setAudioOutput`, it now routes to speaker (matching the initial configuration), not the receiver.
+
+This fixes the issue where speaker/receiver toggle would fail because the SDK reported the wrong current state.
+
 ## [1.9.3] - 2025-12-14
 
 ### Fixed

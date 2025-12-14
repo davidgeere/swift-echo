@@ -145,10 +145,16 @@ public actor WebRTCAudioHandler {
                 try session.setCategory(.playAndRecord, mode: .voiceChat, options: options)
                 try session.overrideOutputAudioPort(.none)
                 
-            case .bluetooth, .wiredHeadphones, .systemDefault, .smart:
-                // No defaultToSpeaker - allow system to route to external device
+            case .bluetooth, .wiredHeadphones:
+                // External devices - no defaultToSpeaker, let system route
                 try session.setCategory(.playAndRecord, mode: .voiceChat, options: options)
                 try session.overrideOutputAudioPort(.none)
+                
+            case .systemDefault, .smart:
+                // Default to speaker (matching initial configureAudioSession behavior)
+                options.insert(.defaultToSpeaker)
+                try session.setCategory(.playAndRecord, mode: .voiceChat, options: options)
+                try session.overrideOutputAudioPort(.speaker)
             }
             
             currentAudioOutput = device

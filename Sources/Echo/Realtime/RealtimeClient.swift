@@ -589,6 +589,12 @@ public actor RealtimeClient: TurnManagerDelegate {
     /// List of available audio output devices
     public var availableAudioOutputDevices: [AudioOutputDeviceType] {
         get async {
+            // WebRTC handles audio natively through its own handler
+            if await transport.handlesAudioNatively {
+                if let webrtcTransport = transport as? WebRTCTransport {
+                    return await webrtcTransport.audioHandler.availableAudioOutputDevices
+                }
+            }
             return await audioPlayback?.availableAudioOutputDevices ?? []
         }
     }
@@ -596,6 +602,12 @@ public actor RealtimeClient: TurnManagerDelegate {
     /// Current active audio output device
     public var currentAudioOutput: AudioOutputDeviceType {
         get async {
+            // WebRTC handles audio natively through its own handler
+            if await transport.handlesAudioNatively {
+                if let webrtcTransport = transport as? WebRTCTransport {
+                    return await webrtcTransport.audioHandler.currentAudioOutput
+                }
+            }
             return await audioPlayback?.currentAudioOutput ?? .systemDefault
         }
     }
