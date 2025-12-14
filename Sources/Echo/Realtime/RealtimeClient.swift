@@ -451,19 +451,21 @@ public actor RealtimeClient: TurnManagerDelegate {
         }
     }
     
-    /// Starts hardware-level audio monitoring for visualization
+    /// Starts transport-agnostic audio monitoring for visualization
     ///
-    /// This monitors the actual hardware audio levels (microphone and speaker)
-    /// regardless of which transport (WebSocket or WebRTC) is being used.
+    /// This sets up audio level monitoring that works for both WebSocket and WebRTC:
+    /// - **Input levels**: Hardware microphone tap (shared by both transports)
+    /// - **Output levels**: Fed from response.audio.delta events (works for both transports)
+    ///
     /// The level data is emitted via inputLevelsChanged and outputLevelsChanged events.
     private func startAudioLevelMonitor() async throws {
         let monitor = AudioLevelMonitor()
         
-        // Start the monitor
+        // Start the monitor (sets up hardware mic tap for input)
         try await monitor.start()
         self.audioLevelMonitor = monitor
         
-        // Forward input levels to event emitter
+        // Forward input levels from hardware mic to event emitter
         Task {
             for await levels in monitor.inputLevelStream {
                 await self.eventEmitter.emit(.inputLevelsChanged(levels: levels))
@@ -471,13 +473,14 @@ public actor RealtimeClient: TurnManagerDelegate {
         }
         
         // Forward output levels to event emitter
+        // NOTE: Output levels are fed via processOutputAudio() in handleServerEvent
         Task {
             for await levels in monitor.outputLevelStream {
                 await self.eventEmitter.emit(.outputLevelsChanged(levels: levels))
             }
         }
         
-        print("[RealtimeClient] ✅ Started hardware audio level monitoring")
+        print("[RealtimeClient] ✅ Started audio level monitoring (transport-agnostic)")
     }
 
     /// Mutes or unmutes audio input
@@ -981,8 +984,13 @@ public actor RealtimeClient: TurnManagerDelegate {
 
             // Emit speaking status when audio starts
             await eventEmitter.emit(.audioStatusChanged(status: .speaking))
+            
+            // Feed output audio to level monitor (works for BOTH transports)
+            // This calculates and emits outputLevelsChanged events
+            await audioLevelMonitor?.processOutputAudio(base64Audio: delta)
 
-            // Play audio chunk
+            // For WebSocket: Play audio chunk manually
+            // For WebRTC: Audio plays through native tracks, we just emit the event
             if let playback = audioPlayback {
                 // Decode base64 to Data for the event
                 if let audioData = Data(base64Encoded: delta) {
@@ -990,6 +998,11 @@ public actor RealtimeClient: TurnManagerDelegate {
                 }
 
                 try? await playback.enqueue(base64Audio: delta)
+            } else {
+                // WebRTC mode - still emit the audio delta event
+                if let audioData = Data(base64Encoded: delta) {
+                    await eventEmitter.emit(.assistantAudioDelta(audioChunk: audioData))
+                }
             }
 
         case .responseAudioTranscriptDelta(_, let itemId, _, _, let delta):

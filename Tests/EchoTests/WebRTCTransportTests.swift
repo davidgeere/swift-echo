@@ -159,10 +159,10 @@ struct WebRTCTransportTests {
     
     // MARK: - Configuration Tests
     
-    @Test("EchoConfiguration transportType defaults to webSocket")
+    @Test("EchoConfiguration transportType defaults to webRTC")
     func echoConfigurationDefaultTransport() {
         let config = EchoConfiguration()
-        #expect(config.transportType == .webSocket)
+        #expect(config.transportType == .webRTC)
     }
     
     @Test("EchoConfiguration accepts webRTC transport")
@@ -171,10 +171,10 @@ struct WebRTCTransportTests {
         #expect(config.transportType == .webRTC)
     }
     
-    @Test("RealtimeClientConfiguration transportType defaults to webSocket")
+    @Test("RealtimeClientConfiguration transportType defaults to webRTC")
     func realtimeClientConfigurationDefaultTransport() {
         let config = RealtimeClientConfiguration.default
-        #expect(config.transportType == .webSocket)
+        #expect(config.transportType == .webRTC)
     }
     
     @Test("RealtimeClientConfiguration accepts webRTC transport")
