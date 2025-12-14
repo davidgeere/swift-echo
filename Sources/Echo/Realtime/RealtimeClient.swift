@@ -29,6 +29,9 @@ public actor RealtimeClient: TurnManagerDelegate {
     
     private var audioCapture: (any AudioCaptureProtocol)?
     private var audioPlayback: (any AudioPlaybackProtocol)?
+    
+    /// Hardware-level audio monitor for visualization (transport-agnostic)
+    private var audioLevelMonitor: AudioLevelMonitor?
 
     // Optional factory closures for creating audio components
     // Allows dependency injection while supporting both concrete and mock implementations
@@ -222,6 +225,12 @@ public actor RealtimeClient: TurnManagerDelegate {
             // Start audio if configured (only for WebSocket - WebRTC handles audio natively)
             if configuration.startAudioAutomatically && !handlesAudioNatively {
                 try await startAudio()
+            }
+            
+            // SOLVE-6: Start hardware-level audio monitoring for BOTH transports
+            // This provides level data for UI visualization regardless of WebSocket or WebRTC
+            if configuration.startAudioAutomatically {
+                try await startAudioLevelMonitor()
             }
 
             sessionState = .connected
@@ -422,6 +431,10 @@ public actor RealtimeClient: TurnManagerDelegate {
         await audioPlayback?.stop()
         audioCapture = nil
         audioPlayback = nil
+        
+        // Stop hardware level monitor
+        await audioLevelMonitor?.stop()
+        audioLevelMonitor = nil
 
         // Reset echo protection state
         isAssistantSpeaking = false
@@ -436,6 +449,35 @@ public actor RealtimeClient: TurnManagerDelegate {
         if wasStarted {
             await eventEmitter.emit(.audioStopped)
         }
+    }
+    
+    /// Starts hardware-level audio monitoring for visualization
+    ///
+    /// This monitors the actual hardware audio levels (microphone and speaker)
+    /// regardless of which transport (WebSocket or WebRTC) is being used.
+    /// The level data is emitted via inputLevelsChanged and outputLevelsChanged events.
+    private func startAudioLevelMonitor() async throws {
+        let monitor = AudioLevelMonitor()
+        
+        // Start the monitor
+        try await monitor.start()
+        self.audioLevelMonitor = monitor
+        
+        // Forward input levels to event emitter
+        Task {
+            for await levels in monitor.inputLevelStream {
+                await self.eventEmitter.emit(.inputLevelsChanged(levels: levels))
+            }
+        }
+        
+        // Forward output levels to event emitter
+        Task {
+            for await levels in monitor.outputLevelStream {
+                await self.eventEmitter.emit(.outputLevelsChanged(levels: levels))
+            }
+        }
+        
+        print("[RealtimeClient] ✅ Started hardware audio level monitoring")
     }
 
     /// Mutes or unmutes audio input

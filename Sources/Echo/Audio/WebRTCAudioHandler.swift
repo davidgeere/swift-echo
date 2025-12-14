@@ -68,8 +68,13 @@ public actor WebRTCAudioHandler {
             // Activate the session
             try session.setActive(true)
             
+            // SOLVE-6: Explicitly set speaker as default output
+            // .voiceChat mode defaults to receiver, so we override to speaker
+            try session.overrideOutputAudioPort(.speaker)
+            currentAudioOutput = .builtInSpeaker
+            
             state = .configured
-            print("[WebRTCAudioHandler] ✅ Audio session configured")
+            print("[WebRTCAudioHandler] ✅ Audio session configured (speaker output)")
             
         } catch {
             state = .error(error)
