@@ -4,17 +4,23 @@ A unified Swift library for OpenAI's Realtime API (WebSocket-based voice) and Ch
 
 [![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
 [![Platform](https://img.shields.io/badge/platform-iOS%2018%20|%20macOS%2014-blue.svg)](https://developer.apple.com)
-[![Version](https://img.shields.io/badge/version-1.8.0-brightgreen.svg)](https://github.com/davidgeere/swift-echo/releases)
+[![Version](https://img.shields.io/badge/version-1.9.0-brightgreen.svg)](https://github.com/davidgeere/swift-echo/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 ## 🚀 Latest Updates
 
-**Echo v1.8.0** adds WebRTC Transport Layer:
+**Echo v1.9.0** - WebRTC Now Fully Functional:
+
+- **Audio Output Fixed**: Remote audio track from OpenAI now plays through device speakers
+- **Output Levels Working**: WebRTC transport now emits `outputLevelsChanged` events via stats polling
+- **Unified Events**: Both transports emit the same `inputLevelsChanged` and `outputLevelsChanged` events
+- **WebRTC Default**: New projects use WebRTC by default for lower latency
+
+**Echo v1.8.0** added WebRTC Transport Layer:
 
 - **Native Audio Tracks**: No more base64 encoding - audio flows through WebRTC media tracks
 - **Lower Latency**: Direct peer connection provides faster audio round-trip
 - **Same API**: Just add `transportType: .webRTC` - everything else stays the same
-- **Same Event Stream**: Transcriptions, messages, and all events flow through the same system
 
 **Echo v1.7.1** fixes PCM16 audio normalization:
 
@@ -60,7 +66,7 @@ Add Echo to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/davidgeere/swift-echo.git", from: "1.6.0")
+    .package(url: "https://github.com/davidgeere/swift-echo.git", from: "1.9.0")
 ]
 ```
 

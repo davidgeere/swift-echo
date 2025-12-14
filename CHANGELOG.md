@@ -5,6 +5,30 @@ All notable changes to Echo will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2025-12-14
+
+### Fixed
+
+#### WebRTC Audio Output
+- **Remote audio track now enabled** - Fixed issue where WebRTC audio wasn't playing through the speaker. The remote audio track from OpenAI's Realtime API now properly plays through the device speakers.
+
+#### WebRTC Audio Level Monitoring
+- **Fixed RTCStatistics parsing** - The `type` property is accessed directly on `RTCStatistics` object, not from the `values` dictionary. This was causing all stats to show as "unknown" type.
+- **Output levels now working** - WebRTC transport now properly emits `outputLevelsChanged` events via stats API polling, matching the same events emitted by WebSocket transport.
+
+### Changed
+
+- **Unified audio level events** - Both WebSocket and WebRTC transports now emit the same `EchoEvent.inputLevelsChanged` and `EchoEvent.outputLevelsChanged` events. Your UI subscribes to one event stream regardless of transport.
+- **WebRTC is now the default transport** - New projects will use WebRTC by default for lower latency and better audio quality.
+
+### Technical Details
+
+The WebRTC output level monitoring works by:
+1. Polling `RTCPeerConnection.statistics()` every 50ms
+2. Finding `inbound-rtp` stats with `kind == "audio"`
+3. Extracting `audioLevel` (0.0-1.0) or calculating from `totalAudioEnergy`
+4. Emitting via `outputLevelStream` → `EchoEvent.outputLevelsChanged`
+
 ## [1.8.0] - 2025-12-13
 
 ### Added
