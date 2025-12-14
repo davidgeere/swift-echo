@@ -128,12 +128,24 @@ public actor WebRTCAudioHandler {
         do {
             switch device {
             case .builtInSpeaker:
+                // Restore full speaker configuration (matching configureAudioSession)
+                // Must reconfigure category with .defaultToSpeaker after switching from receiver
+                try session.setCategory(
+                    .playAndRecord,
+                    mode: .voiceChat,
+                    options: [
+                        .defaultToSpeaker,
+                        .allowBluetooth,
+                        .allowBluetoothA2DP,
+                        .mixWithOthers
+                    ]
+                )
                 try session.overrideOutputAudioPort(.speaker)
                 
             case .builtInReceiver:
-                try session.overrideOutputAudioPort(.none)
-                // Set to voice chat mode which uses receiver
+                // Voice chat mode without .defaultToSpeaker routes to receiver
                 try session.setCategory(.playAndRecord, mode: .voiceChat)
+                try session.overrideOutputAudioPort(.none)
                 
             case .bluetooth, .wiredHeadphones, .systemDefault, .smart:
                 try session.overrideOutputAudioPort(.none)
