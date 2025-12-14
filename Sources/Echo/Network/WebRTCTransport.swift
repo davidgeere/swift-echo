@@ -507,9 +507,9 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
                 if pollCount <= 3 {
                     print("[DEBUG-LEVELS] 📊 WebRTC stats poll #\(pollCount): \(stats.statistics.count) stat entries")
                     for (key, stat) in stats.statistics {
-                        let type = stat.values["type"] as? String ?? "unknown"
+                        // type is a property on RTCStatistics, kind is in values
                         let kind = stat.values["kind"] as? String ?? "n/a"
-                        print("[DEBUG-LEVELS]   - \(key): type=\(type), kind=\(kind)")
+                        print("[DEBUG-LEVELS]   - \(key): type=\(stat.type), kind=\(kind)")
                     }
                 }
                 
@@ -519,8 +519,8 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
                 
                 for (_, stat) in stats.statistics {
                     // Look for inbound audio track stats
-                    if let type = stat.values["type"] as? String,
-                       type == "inbound-rtp",
+                    // Note: type is a property on RTCStatistics, not in values dict
+                    if stat.type == "inbound-rtp",
                        let kind = stat.values["kind"] as? String,
                        kind == "audio" {
                         
