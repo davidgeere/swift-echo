@@ -126,30 +126,41 @@ public actor WebRTCAudioHandler {
         let session = AVAudioSession.sharedInstance()
         
         do {
+            // Build options based on device - only speaker gets .defaultToSpeaker
+            var options: AVAudioSession.CategoryOptions = [
+                .allowBluetooth,
+                .allowBluetoothA2DP,
+                .mixWithOthers
+            ]
+            var portOverride: AVAudioSession.PortOverride = .none
+            
             switch device {
             case .builtInSpeaker:
-                // Restore full speaker configuration (matching configureAudioSession)
-                // Must reconfigure category with .defaultToSpeaker after switching from receiver
-                try session.setCategory(
-                    .playAndRecord,
-                    mode: .voiceChat,
-                    options: [
-                        .defaultToSpeaker,
-                        .allowBluetooth,
-                        .allowBluetoothA2DP,
-                        .mixWithOthers
-                    ]
-                )
-                try session.overrideOutputAudioPort(.speaker)
+                options.insert(.defaultToSpeaker)
+                portOverride = .speaker
                 
             case .builtInReceiver:
-                // Voice chat mode without .defaultToSpeaker routes to receiver
-                try session.setCategory(.playAndRecord, mode: .voiceChat)
-                try session.overrideOutputAudioPort(.none)
+                // No .defaultToSpeaker - voiceChat mode defaults to receiver
+                portOverride = .none
                 
-            case .bluetooth, .wiredHeadphones, .systemDefault, .smart:
-                try session.overrideOutputAudioPort(.none)
+            case .bluetooth, .wiredHeadphones, .systemDefault:
+                // No .defaultToSpeaker - allow system to route to external device
+                portOverride = .none
+                
+            case .smart:
+                // Smart mode: prefer Bluetooth if available, otherwise speaker
+                let bluetoothConnected = availableAudioOutputDevices.contains { $0.isBluetooth }
+                if bluetoothConnected {
+                    portOverride = .none
+                } else {
+                    options.insert(.defaultToSpeaker)
+                    portOverride = .speaker
+                }
             }
+            
+            // Always reconfigure category to ensure .defaultToSpeaker is properly set/cleared
+            try session.setCategory(.playAndRecord, mode: .voiceChat, options: options)
+            try session.overrideOutputAudioPort(portOverride)
             
             currentAudioOutput = device
             print("[WebRTCAudioHandler] 🔊 Audio output set to: \(device)")
@@ -225,4 +236,3 @@ public actor WebRTCAudioHandler {
         }
     }
 }
-
