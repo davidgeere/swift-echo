@@ -976,6 +976,9 @@ public actor RealtimeClient: TurnManagerDelegate {
 
         // Audio response
         case .responseAudioDelta(_, _, _, _, let delta):
+            // DEBUG: Log that we received audio delta
+            print("[DEBUG-LEVELS] 📢 Received responseAudioDelta, delta length: \(delta.count) chars")
+            
             // Enable echo protection gating when assistant starts producing audio
             if !isAssistantSpeaking {
                 isAssistantSpeaking = true
@@ -987,6 +990,7 @@ public actor RealtimeClient: TurnManagerDelegate {
             
             // Feed output audio to level monitor (works for BOTH transports)
             // This calculates and emits outputLevelsChanged events
+            print("[DEBUG-LEVELS] 📢 Calling processOutputAudio...")
             await audioLevelMonitor?.processOutputAudio(base64Audio: delta)
 
             // For WebSocket: Play audio chunk manually

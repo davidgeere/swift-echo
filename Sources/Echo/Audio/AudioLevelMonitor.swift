@@ -80,6 +80,9 @@ public actor AudioLevelMonitor {
         
         // Install tap on input node for microphone levels
         if inputFormat.channelCount > 0 && inputFormat.sampleRate > 0 {
+            // DEBUG: Track how often we log (don't spam)
+            var inputLogCounter = 0
+            
             inputNode.installTap(onBus: 0, bufferSize: 2048, format: inputFormat) { [weak self] buffer, _ in
                 guard let self else { return }
                 
@@ -96,6 +99,12 @@ public actor AudioLevelMonitor {
                     let smoothed = newLevels.smoothed(from: current, factor: self.smoothingFactor)
                     current = smoothed
                     return smoothed
+                }
+                
+                // DEBUG: Log input levels occasionally (every 50th callback to avoid spam)
+                inputLogCounter += 1
+                if inputLogCounter % 50 == 0 {
+                    print("[DEBUG-LEVELS] 🎤 Input levels - level: \(String(format: "%.3f", smoothedLevels.level)), low: \(String(format: "%.3f", smoothedLevels.low)), mid: \(String(format: "%.3f", smoothedLevels.mid)), high: \(String(format: "%.3f", smoothedLevels.high))")
                 }
                 
                 // Yield to stream
@@ -126,7 +135,10 @@ public actor AudioLevelMonitor {
     ///
     /// - Parameter pcm16Data: Raw PCM16 audio data (decoded from base64 audio delta)
     public func processOutputAudio(pcm16Data: Data) {
-        guard isMonitoring else { return }
+        guard isMonitoring else {
+            print("[DEBUG-LEVELS] ⚠️ processOutputAudio called but not monitoring")
+            return
+        }
         
         // Convert PCM16 to Float samples
         let samples: [Float] = pcm16Data.withUnsafeBytes { bytes in
@@ -134,7 +146,10 @@ public actor AudioLevelMonitor {
             return int16Buffer.map { Float($0) / 32768.0 }
         }
         
-        guard !samples.isEmpty else { return }
+        guard !samples.isEmpty else {
+            print("[DEBUG-LEVELS] ⚠️ processOutputAudio: no samples after conversion")
+            return
+        }
         
         // Calculate levels using frequency analyzer
         let newLevels = outputAnalyzer.analyze(samples: samples, sampleRate: outputSampleRate)
@@ -145,6 +160,9 @@ public actor AudioLevelMonitor {
             current = smoothed
             return smoothed
         }
+        
+        // DEBUG: Log output levels
+        print("[DEBUG-LEVELS] 🔊 Output levels - level: \(String(format: "%.3f", smoothedLevels.level)), low: \(String(format: "%.3f", smoothedLevels.low)), mid: \(String(format: "%.3f", smoothedLevels.mid)), high: \(String(format: "%.3f", smoothedLevels.high))")
         
         // Yield to stream
         outputLevelContinuation.yield(smoothedLevels)
