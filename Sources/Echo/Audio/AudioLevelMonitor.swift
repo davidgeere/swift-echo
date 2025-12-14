@@ -1,20 +1,21 @@
 // AudioLevelMonitor.swift
 // Echo - Audio
-// Hardware-level audio monitoring for visualization (transport-agnostic)
+// Transport-agnostic audio level monitoring for visualization
 
 @preconcurrency import AVFoundation
 import Foundation
 import os
 
-/// Monitors hardware audio input/output levels for visualization
+/// Monitors audio input/output levels for visualization (transport-agnostic)
 ///
-/// This actor monitors the actual hardware audio levels (microphone and speaker)
-/// independently of the transport mechanism (WebSocket or WebRTC). This provides
-/// consistent level data for UI visualizations regardless of how audio is being
-/// captured or played.
+/// This actor provides a unified interface for audio level monitoring that works
+/// with both WebSocket and WebRTC transports:
 ///
-/// - Note: This uses AVAudioEngine taps on the hardware nodes, which observes
-///   but does not interfere with the audio flowing through those nodes.
+/// - **Input levels**: Always from hardware microphone tap (shared by both transports)
+/// - **Output levels**: Fed externally via `processOutputAudio()` from audio delta events
+///
+/// This design ensures the same events (`inputLevelsChanged`, `outputLevelsChanged`)
+/// are emitted regardless of transport, keeping the consumer agnostic of the source.
 public actor AudioLevelMonitor {
     // MARK: - Properties
     
@@ -27,6 +28,9 @@ public actor AudioLevelMonitor {
     
     /// Smoothing factor for level transitions (0.0-1.0, higher = faster response)
     private let smoothingFactor: Float = 0.3
+    
+    /// Sample rate for output audio analysis (default: 24kHz for OpenAI Realtime)
+    private let outputSampleRate: Float = 24000.0
     
     /// Current smoothed input levels (thread-safe via lock)
     private let currentInputLevels = OSAllocatedUnfairLock(initialState: AudioLevels.zero)
@@ -60,15 +64,16 @@ public actor AudioLevelMonitor {
     
     // MARK: - Public Methods
     
-    /// Starts monitoring hardware audio levels
+    /// Starts monitoring hardware audio input levels
     ///
+    /// - Note: Only monitors INPUT (microphone). Output levels are fed via `processOutputAudio()`.
     /// - Throws: Error if the audio engine cannot be started
     public func start() async throws {
         guard !isMonitoring else { return }
         
         let engine = AVAudioEngine()
         
-        // Get the input node (microphone)
+        // Get the input node (microphone) - this is shared hardware, works for both transports
         let inputNode = engine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
         let inputSampleRate = Float(inputFormat.sampleRate)
@@ -100,56 +105,65 @@ public actor AudioLevelMonitor {
             }
         }
         
-        // Get the output node (we need to connect something to enable the mixer)
-        // We'll use the main mixer node which aggregates all output
-        let mainMixer = engine.mainMixerNode
-        let outputFormat = mainMixer.outputFormat(forBus: 0)
-        let outputSampleRate = Float(outputFormat.sampleRate)
+        // NOTE: We do NOT tap output here. Output levels are fed via processOutputAudio()
+        // This is because WebRTC doesn't route through AVAudioEngine's mixer.
         
-        // Install tap on main mixer for output levels
-        if outputFormat.channelCount > 0 && outputFormat.sampleRate > 0 {
-            mainMixer.installTap(onBus: 0, bufferSize: 2048, format: outputFormat) { [weak self] buffer, _ in
-                guard let self else { return }
-                
-                // Extract samples synchronously on audio thread
-                guard let channelData = buffer.floatChannelData?[0] else { return }
-                let frameCount = Int(buffer.frameLength)
-                let samples = Array(UnsafeBufferPointer(start: channelData, count: frameCount))
-                
-                // Calculate levels using frequency analyzer
-                let newLevels = self.outputAnalyzer.analyze(samples: samples, sampleRate: outputSampleRate)
-                
-                // Apply smoothing
-                let smoothedLevels = self.currentOutputLevels.withLock { current in
-                    let smoothed = newLevels.smoothed(from: current, factor: self.smoothingFactor)
-                    current = smoothed
-                    return smoothed
-                }
-                
-                // Yield to stream
-                Task { [weak self] in
-                    self?.outputLevelContinuation.yield(smoothedLevels)
-                }
-            }
-        }
-        
-        // Prepare and start the engine
+        // Prepare and start the engine (required even for input-only)
         engine.prepare()
         try engine.start()
         
         self.engine = engine
         self.isMonitoring = true
         
-        print("[AudioLevelMonitor] ✅ Started monitoring hardware audio levels")
+        print("[AudioLevelMonitor] ✅ Started monitoring (input: hardware mic, output: fed externally)")
     }
     
-    /// Stops monitoring hardware audio levels
+    /// Processes output audio data and emits output level events
+    ///
+    /// This should be called whenever audio is being played/sent to the speaker,
+    /// regardless of transport (WebSocket or WebRTC). Both transports receive
+    /// `response.audio.delta` events which can be decoded and passed here.
+    ///
+    /// - Parameter pcm16Data: Raw PCM16 audio data (decoded from base64 audio delta)
+    public func processOutputAudio(pcm16Data: Data) {
+        guard isMonitoring else { return }
+        
+        // Convert PCM16 to Float samples
+        let samples: [Float] = pcm16Data.withUnsafeBytes { bytes in
+            let int16Buffer = bytes.bindMemory(to: Int16.self)
+            return int16Buffer.map { Float($0) / 32768.0 }
+        }
+        
+        guard !samples.isEmpty else { return }
+        
+        // Calculate levels using frequency analyzer
+        let newLevels = outputAnalyzer.analyze(samples: samples, sampleRate: outputSampleRate)
+        
+        // Apply smoothing
+        let smoothedLevels = currentOutputLevels.withLock { current in
+            let smoothed = newLevels.smoothed(from: current, factor: smoothingFactor)
+            current = smoothed
+            return smoothed
+        }
+        
+        // Yield to stream
+        outputLevelContinuation.yield(smoothedLevels)
+    }
+    
+    /// Processes output audio from base64-encoded audio (convenience method)
+    ///
+    /// - Parameter base64Audio: Base64-encoded PCM16 audio data
+    public func processOutputAudio(base64Audio: String) {
+        guard let data = Data(base64Encoded: base64Audio) else { return }
+        processOutputAudio(pcm16Data: data)
+    }
+    
+    /// Stops monitoring audio levels
     public func stop() async {
         guard isMonitoring else { return }
         
         if let engine = engine {
             engine.inputNode.removeTap(onBus: 0)
-            engine.mainMixerNode.removeTap(onBus: 0)
             engine.stop()
         }
         
@@ -164,7 +178,7 @@ public actor AudioLevelMonitor {
         inputLevelContinuation.yield(.zero)
         outputLevelContinuation.yield(.zero)
         
-        print("[AudioLevelMonitor] ✅ Stopped monitoring hardware audio levels")
+        print("[AudioLevelMonitor] ✅ Stopped monitoring audio levels")
     }
     
     /// Whether the monitor is currently running
