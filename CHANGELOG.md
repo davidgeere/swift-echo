@@ -5,6 +5,17 @@ All notable changes to Echo will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.3] - 2025-12-14
+
+### Fixed
+
+#### Audio Session Category Options (WebRTC)
+- **Fixed Bluetooth and audio mixing support during device switching** - The audio session category is now properly reconfigured for ALL device types with the required options (`.allowBluetooth`, `.allowBluetoothA2DP`, `.mixWithOthers`). Previously:
+  - Speaker only called `overrideOutputAudioPort` without `setCategory`
+  - Receiver called `setCategory` but without any options, breaking Bluetooth
+  - Bluetooth/Headphones only called `overrideOutputAudioPort` without `setCategory`
+- All device types now call `setCategory` with proper options, maintaining Bluetooth connectivity and audio mixing
+
 ## [1.9.2] - 2025-12-14
 
 ### Fixed
