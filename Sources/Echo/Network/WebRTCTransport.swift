@@ -3,7 +3,7 @@
 // WebRTC implementation of RealtimeTransportProtocol
 
 import Foundation
-import WebRTC
+@preconcurrency import WebRTC
 
 /// WebRTC-based transport for the Realtime API
 ///
@@ -35,11 +35,19 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
     private var peerConnection: RTCPeerConnection?
     private var dataChannel: RTCDataChannel?
     private var localAudioTrack: RTCAudioTrack?
+    private var remoteAudioTrack: RTCAudioTrack?
     private var audioSource: RTCAudioSource?
     
     // Delegate wrapper to handle WebRTC callbacks
     private var peerConnectionDelegate: PeerConnectionDelegate?
     private var dataChannelDelegate: DataChannelDelegate?
+    
+    // Audio level monitoring for WebRTC
+    private var audioLevelMonitorTask: Task<Void, Never>?
+    
+    /// Stream of output audio levels for visualization
+    public let outputLevelStream: AsyncStream<AudioLevels>
+    private let outputLevelContinuation: AsyncStream<AudioLevels>.Continuation
     
     /// Stream of received JSON events from the data channel
     public let eventStream: AsyncStream<String>
@@ -74,6 +82,12 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
             connectionCont = continuation
         }
         self.connectionStateContinuation = connectionCont!
+        
+        var outputLevelCont: AsyncStream<AudioLevels>.Continuation?
+        self.outputLevelStream = AsyncStream { continuation in
+            outputLevelCont = continuation
+        }
+        self.outputLevelContinuation = outputLevelCont!
     }
     
     // MARK: - RealtimeTransportProtocol Methods
@@ -265,6 +279,11 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
                 await self?.handleIceConnectionStateChange(state)
             }
         }
+        pcDelegate.onRemoteAudioTrack = { [weak self] track in
+            Task { [weak self] in
+                await self?.handleRemoteAudioTrack(track)
+            }
+        }
         
         // Create peer connection
         guard let pc = factory.peerConnection(
@@ -415,6 +434,89 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
         print("[WebRTCTransport] 🧊 ICE state: \(state.rawValue)")
     }
     
+    private func handleRemoteAudioTrack(_ track: RTCAudioTrack) {
+        print("[WebRTCTransport] 🔊 Remote audio track received, starting level monitoring")
+        self.remoteAudioTrack = track
+        
+        // Start polling WebRTC stats for audio levels
+        startAudioLevelMonitoring()
+    }
+    
+    /// Starts polling WebRTC statistics for remote audio levels
+    private func startAudioLevelMonitoring() {
+        // Cancel any existing task
+        audioLevelMonitorTask?.cancel()
+        
+        // Capture peer connection reference for the task
+        guard let pc = self.peerConnection else { return }
+        let continuation = self.outputLevelContinuation
+        
+        audioLevelMonitorTask = Task { @MainActor in
+            // Track previous audio level for smoothing
+            var previousLevel: Float = 0
+            let smoothingFactor: Float = 0.3
+            
+            while !Task.isCancelled {
+                // Poll every ~50ms (20 times per second for smooth visualization)
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                
+                // Get stats from peer connection
+                let stats = await withCheckedContinuation { (cont: CheckedContinuation<RTCStatisticsReport?, Never>) in
+                    pc.statistics { report in
+                        cont.resume(returning: report)
+                    }
+                }
+                
+                guard let stats = stats else { continue }
+                
+                // Find inbound-rtp stats for audio
+                var audioLevel: Float = 0
+                for (_, stat) in stats.statistics {
+                    // Look for inbound audio track stats
+                    if let type = stat.values["type"] as? String,
+                       type == "inbound-rtp",
+                       let kind = stat.values["kind"] as? String,
+                       kind == "audio" {
+                        
+                        // Try to get audio level (0.0-1.0)
+                        if let level = stat.values["audioLevel"] as? Double {
+                            audioLevel = Float(level)
+                            print("[DEBUG-LEVELS] 🔊 WebRTC stats audioLevel: \(audioLevel)")
+                        }
+                        // Alternative: get total audio energy and calculate level
+                        else if let totalEnergy = stat.values["totalAudioEnergy"] as? Double,
+                                let totalDuration = stat.values["totalSamplesDuration"] as? Double,
+                                totalDuration > 0 {
+                            // RMS level approximation from energy
+                            let avgEnergy = totalEnergy / totalDuration
+                            audioLevel = Float(sqrt(avgEnergy))
+                            print("[DEBUG-LEVELS] 🔊 WebRTC stats calculated level: \(audioLevel)")
+                        }
+                        break
+                    }
+                }
+                
+                // Apply smoothing
+                let smoothedLevel = previousLevel + smoothingFactor * (audioLevel - previousLevel)
+                previousLevel = smoothedLevel
+                
+                // Create AudioLevels and emit
+                // For now, we'll put all energy in the mid band (voice frequencies)
+                let levels = AudioLevels(
+                    level: smoothedLevel,
+                    low: smoothedLevel * 0.2,
+                    mid: smoothedLevel * 0.7,
+                    high: smoothedLevel * 0.1
+                )
+                
+                // Only emit if there's meaningful audio
+                if smoothedLevel > 0.001 || previousLevel > 0.001 {
+                    continuation.yield(levels)
+                }
+            }
+        }
+    }
+    
     private func handleDataChannelMessage(_ message: String) {
         eventContinuation.yield(message)
     }
@@ -433,14 +535,19 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
         _isConnected = false
         isIntentionalDisconnect = false
         
+        // Cancel audio level monitoring
+        audioLevelMonitorTask?.cancel()
+        audioLevelMonitorTask = nil
+        
         // Close data channel
         dataChannel?.close()
         dataChannel = nil
         dataChannelDelegate = nil
         
-        // Disable and remove audio track
+        // Disable and remove audio tracks
         localAudioTrack?.isEnabled = false
         localAudioTrack = nil
+        remoteAudioTrack = nil
         audioSource = nil
         
         // Close peer connection
@@ -463,6 +570,7 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
     deinit {
         eventContinuation.finish()
         connectionStateContinuation.finish()
+        outputLevelContinuation.finish()
     }
 }
 
@@ -473,6 +581,7 @@ private final class PeerConnectionDelegate: NSObject, RTCPeerConnectionDelegate,
     var onConnectionStateChange: ((RTCPeerConnectionState) -> Void)?
     var onIceConnectionStateChange: ((RTCIceConnectionState) -> Void)?
     var onIceCandidate: ((RTCIceCandidate) -> Void)?
+    var onRemoteAudioTrack: ((RTCAudioTrack) -> Void)?
     
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {
         print("[PeerConnectionDelegate] Signaling state: \(stateChanged.rawValue)")
@@ -480,6 +589,11 @@ private final class PeerConnectionDelegate: NSObject, RTCPeerConnectionDelegate,
     
     func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {
         print("[PeerConnectionDelegate] Added stream: \(stream.streamId)")
+        // Capture remote audio track
+        if let audioTrack = stream.audioTracks.first {
+            print("[PeerConnectionDelegate] 🔊 Found remote audio track: \(audioTrack.trackId)")
+            onRemoteAudioTrack?(audioTrack)
+        }
     }
     
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {

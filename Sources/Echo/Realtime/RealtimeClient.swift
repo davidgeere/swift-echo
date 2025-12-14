@@ -455,7 +455,9 @@ public actor RealtimeClient: TurnManagerDelegate {
     ///
     /// This sets up audio level monitoring that works for both WebSocket and WebRTC:
     /// - **Input levels**: Hardware microphone tap (shared by both transports)
-    /// - **Output levels**: Fed from response.audio.delta events (works for both transports)
+    /// - **Output levels**: 
+    ///   - WebSocket: Fed from response.audio.delta events
+    ///   - WebRTC: Polled from WebRTC stats API
     ///
     /// The level data is emitted via inputLevelsChanged and outputLevelsChanged events.
     private func startAudioLevelMonitor() async throws {
@@ -473,11 +475,23 @@ public actor RealtimeClient: TurnManagerDelegate {
         }
         
         // Forward output levels to event emitter
-        // NOTE: Output levels are fed via processOutputAudio() in handleServerEvent
+        // For WebSocket: levels come from processOutputAudio() via monitor.outputLevelStream
+        // For WebRTC: levels come from WebRTCTransport.outputLevelStream
         Task {
             for await levels in monitor.outputLevelStream {
                 await self.eventEmitter.emit(.outputLevelsChanged(levels: levels))
             }
+        }
+        
+        // For WebRTC: Also listen to the transport's output level stream
+        if let webrtcTransport = transport as? WebRTCTransport {
+            let outputStream = webrtcTransport.outputLevelStream
+            Task {
+                for await levels in outputStream {
+                    await self.eventEmitter.emit(.outputLevelsChanged(levels: levels))
+                }
+            }
+            print("[RealtimeClient] ✅ Started WebRTC output level monitoring")
         }
         
         print("[RealtimeClient] ✅ Started audio level monitoring (transport-agnostic)")
