@@ -448,17 +448,41 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
         audioLevelMonitorTask?.cancel()
         
         // Capture peer connection reference for the task
-        guard let pc = self.peerConnection else { return }
+        guard let pc = self.peerConnection else {
+            // #region agent log H-E
+            let logE = "{\"hypothesisId\":\"E\",\"location\":\"WebRTCTransport.swift:startAudioLevelMonitoring\",\"message\":\"peerConnection is nil\",\"timestamp\":\(Int(Date().timeIntervalSince1970 * 1000)),\"sessionId\":\"debug-session\"}\n"
+            if let data = logE.data(using: .utf8) {
+                FileManager.default.createFile(atPath: "/Users/davidgeere/Development/swift-echo/.cursor/debug.log", contents: nil)
+                if let handle = FileHandle(forWritingAtPath: "/Users/davidgeere/Development/swift-echo/.cursor/debug.log") {
+                    handle.seekToEndOfFile()
+                    handle.write(data)
+                    handle.closeFile()
+                }
+            }
+            // #endregion
+            return
+        }
         let continuation = self.outputLevelContinuation
+        
+        // #region agent log H-E-OK
+        let logEOK = "{\"hypothesisId\":\"E-OK\",\"location\":\"WebRTCTransport.swift:startAudioLevelMonitoring\",\"message\":\"peerConnection exists, starting polling\",\"timestamp\":\(Int(Date().timeIntervalSince1970 * 1000)),\"sessionId\":\"debug-session\"}\n"
+        if let data = logEOK.data(using: .utf8), let handle = FileHandle(forWritingAtPath: "/Users/davidgeere/Development/swift-echo/.cursor/debug.log") {
+            handle.seekToEndOfFile()
+            handle.write(data)
+            handle.closeFile()
+        }
+        // #endregion
         
         audioLevelMonitorTask = Task { @MainActor in
             // Track previous audio level for smoothing
             var previousLevel: Float = 0
             let smoothingFactor: Float = 0.3
+            var pollCount = 0
             
             while !Task.isCancelled {
                 // Poll every ~50ms (20 times per second for smooth visualization)
                 try? await Task.sleep(nanoseconds: 50_000_000)
+                pollCount += 1
                 
                 // Get stats from peer connection
                 let stats = await withCheckedContinuation { (cont: CheckedContinuation<RTCStatisticsReport?, Never>) in
@@ -467,7 +491,40 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
                     }
                 }
                 
-                guard let stats = stats else { continue }
+                guard let stats = stats else {
+                    // #region agent log H-STATS-NIL
+                    if pollCount <= 3 {
+                        let logNil = "{\"hypothesisId\":\"STATS-NIL\",\"location\":\"WebRTCTransport.swift:polling\",\"message\":\"stats is nil\",\"data\":{\"pollCount\":\(pollCount)},\"timestamp\":\(Int(Date().timeIntervalSince1970 * 1000)),\"sessionId\":\"debug-session\"}\n"
+                        if let data = logNil.data(using: .utf8), let handle = FileHandle(forWritingAtPath: "/Users/davidgeere/Development/swift-echo/.cursor/debug.log") {
+                            handle.seekToEndOfFile()
+                            handle.write(data)
+                            handle.closeFile()
+                        }
+                    }
+                    // #endregion
+                    continue
+                }
+                
+                // #region agent log H-ABCD - Log all stat types on first few polls
+                if pollCount <= 3 {
+                    var allStats: [[String: Any]] = []
+                    for (key, stat) in stats.statistics {
+                        let type = stat.values["type"] as? String ?? "unknown"
+                        let kind = stat.values["kind"] as? String ?? "n/a"
+                        let keys = Array(stat.values.keys)
+                        allStats.append(["key": key, "type": type, "kind": kind, "availableKeys": keys])
+                    }
+                    // Serialize to JSON-safe string
+                    let statsJson = (try? JSONSerialization.data(withJSONObject: allStats)) ?? Data()
+                    let statsStr = String(data: statsJson, encoding: .utf8)?.replacingOccurrences(of: "\"", with: "\\\"") ?? "[]"
+                    let logABCD = "{\"hypothesisId\":\"ABCD\",\"location\":\"WebRTCTransport.swift:polling\",\"message\":\"all stats\",\"data\":{\"pollCount\":\(pollCount),\"statCount\":\(stats.statistics.count),\"stats\":\"\(statsStr)\"},\"timestamp\":\(Int(Date().timeIntervalSince1970 * 1000)),\"sessionId\":\"debug-session\"}\n"
+                    if let data = logABCD.data(using: .utf8), let handle = FileHandle(forWritingAtPath: "/Users/davidgeere/Development/swift-echo/.cursor/debug.log") {
+                        handle.seekToEndOfFile()
+                        handle.write(data)
+                        handle.closeFile()
+                    }
+                }
+                // #endregion
                 
                 // Find inbound-rtp stats for audio
                 var audioLevel: Float = 0
@@ -477,6 +534,19 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
                        type == "inbound-rtp",
                        let kind = stat.values["kind"] as? String,
                        kind == "audio" {
+                        
+                        // #region agent log H-FOUND-INBOUND
+                        if pollCount <= 3 {
+                            let allKeys = Array(stat.values.keys)
+                            let keysStr = allKeys.joined(separator: ",")
+                            let logFound = "{\"hypothesisId\":\"FOUND-INBOUND\",\"location\":\"WebRTCTransport.swift:polling\",\"message\":\"found inbound-rtp audio\",\"data\":{\"keys\":\"\(keysStr)\"},\"timestamp\":\(Int(Date().timeIntervalSince1970 * 1000)),\"sessionId\":\"debug-session\"}\n"
+                            if let data = logFound.data(using: .utf8), let handle = FileHandle(forWritingAtPath: "/Users/davidgeere/Development/swift-echo/.cursor/debug.log") {
+                                handle.seekToEndOfFile()
+                                handle.write(data)
+                                handle.closeFile()
+                            }
+                        }
+                        // #endregion
                         
                         // Try to get audio level (0.0-1.0)
                         if let level = stat.values["audioLevel"] as? Double {
