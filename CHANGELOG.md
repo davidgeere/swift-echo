@@ -5,6 +5,13 @@ All notable changes to Echo will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.1] - 2025-12-14
+
+### Fixed
+
+#### Speaker Toggle (WebRTC)
+- **Fixed speaker toggle failing after switching to receiver** - When switching from receiver back to speaker, the audio session category now properly restores the `.defaultToSpeaker` option. Previously, only `overrideOutputAudioPort(.speaker)` was called without reconfiguring the category, which iOS's `.voiceChat` mode would ignore.
+
 ## [1.9.0] - 2025-12-14
 
 ### Fixed
