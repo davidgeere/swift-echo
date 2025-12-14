@@ -5,6 +5,15 @@ All notable changes to Echo will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.5] - 2025-12-13
+
+### Fixed
+
+#### WebRTC Default Audio Output Configuration
+- **Fixed `defaultAudioOutput` being ignored for WebRTC transport** - The `EchoConfiguration.defaultAudioOutput` setting is now properly applied when using WebRTC transport. Previously, WebRTC always started with speaker output regardless of the configured default, because `applyDefaultAudioOutput()` was only called inside `startAudio()` which is skipped for WebRTC (since it handles audio natively). Now the configured `defaultAudioOutput` is applied after WebRTC connection is established.
+
+This fixes the issue where setting `defaultAudioOutput: .builtInReceiver` in your configuration would be ignored when using WebRTC transport.
+
 ## [1.9.4] - 2025-12-14
 
 ### Fixed

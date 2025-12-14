@@ -227,6 +227,16 @@ public actor RealtimeClient: TurnManagerDelegate {
                 try await startAudio()
             }
             
+            // Apply default audio output for WebRTC transport
+            // For WebSocket, this is handled inside startAudio() via applyDefaultAudioOutput()
+            // For WebRTC, audio session is configured in WebRTCTransport.connect() with speaker as default,
+            // so we need to apply the configured default output here if it differs
+            #if os(iOS)
+            if handlesAudioNatively, let defaultOutput = configuration.defaultAudioOutput {
+                try await setAudioOutput(device: defaultOutput)
+            }
+            #endif
+            
             // SOLVE-6: Start hardware-level audio monitoring for BOTH transports
             // This provides level data for UI visualization regardless of WebSocket or WebRTC
             if configuration.startAudioAutomatically {

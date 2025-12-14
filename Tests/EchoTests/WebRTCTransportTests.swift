@@ -319,5 +319,93 @@ struct WebRTCAudioHandlerTests {
         let output = await handler.currentAudioOutput
         #expect(output == .systemDefault)
     }
+    
+    #if os(iOS)
+    @Test("WebRTCAudioHandler setAudioOutput updates currentAudioOutput")
+    func audioHandlerSetOutput() async throws {
+        let handler = WebRTCAudioHandler()
+        
+        // Configure the audio session first (required before setting output)
+        try await handler.configureAudioSession()
+        
+        // Verify initial state after configuration (speaker is default)
+        let initialOutput = await handler.currentAudioOutput
+        #expect(initialOutput == .builtInSpeaker)
+        
+        // Set to receiver
+        try await handler.setAudioOutput(device: .builtInReceiver)
+        let receiverOutput = await handler.currentAudioOutput
+        #expect(receiverOutput == .builtInReceiver)
+        
+        // Set back to speaker
+        try await handler.setAudioOutput(device: .builtInSpeaker)
+        let speakerOutput = await handler.currentAudioOutput
+        #expect(speakerOutput == .builtInSpeaker)
+        
+        // Deactivate session
+        await handler.deactivateAudioSession()
+    }
+    #endif
+}
+
+@Suite("WebRTC DefaultAudioOutput Configuration Tests")
+struct WebRTCDefaultAudioOutputTests {
+    
+    @Test("EchoConfiguration with defaultAudioOutput for WebRTC")
+    func echoConfigurationDefaultAudioOutputWebRTC() {
+        // Verify configuration properly stores defaultAudioOutput
+        let config = EchoConfiguration(
+            defaultAudioOutput: .builtInReceiver,
+            transportType: .webRTC
+        )
+        
+        #expect(config.transportType == RealtimeTransportType.webRTC)
+        #expect(config.defaultAudioOutput == AudioOutputDeviceType.builtInReceiver)
+    }
+    
+    @Test("EchoConfiguration preserves defaultAudioOutput in RealtimeClientConfiguration")
+    func echoConfigurationPreservesDefaultAudioOutput() {
+        let echoConfig = EchoConfiguration(
+            defaultAudioOutput: .builtInReceiver,
+            transportType: .webRTC
+        )
+        
+        let realtimeConfig = echoConfig.toRealtimeClientConfiguration()
+        
+        #expect(realtimeConfig.transportType == RealtimeTransportType.webRTC)
+        #expect(realtimeConfig.defaultAudioOutput == AudioOutputDeviceType.builtInReceiver)
+    }
+    
+    @Test("RealtimeClientConfiguration accepts defaultAudioOutput with WebRTC")
+    func realtimeClientConfigurationDefaultAudioOutputWebRTC() {
+        let config = RealtimeClientConfiguration(
+            model: .gptRealtime,
+            defaultAudioOutput: .builtInReceiver,
+            transportType: .webRTC
+        )
+        
+        #expect(config.transportType == RealtimeTransportType.webRTC)
+        #expect(config.defaultAudioOutput == AudioOutputDeviceType.builtInReceiver)
+    }
+    
+    @Test("Configuration supports all AudioOutputDeviceType values")
+    func configurationSupportsAllAudioOutputDeviceTypes() {
+        let deviceTypes: [AudioOutputDeviceType] = [
+            .systemDefault,
+            .builtInSpeaker,
+            .builtInReceiver,
+            .smart,
+            .bluetooth(name: "AirPods"),
+            .wiredHeadphones(name: "EarPods")
+        ]
+        
+        for deviceType in deviceTypes {
+            let config = EchoConfiguration(
+                defaultAudioOutput: deviceType,
+                transportType: .webRTC
+            )
+            #expect(config.defaultAudioOutput == deviceType)
+        }
+    }
 }
 
