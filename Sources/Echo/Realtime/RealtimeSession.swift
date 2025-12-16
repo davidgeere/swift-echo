@@ -18,7 +18,7 @@ public struct RealtimeSession: Sendable {
     public let voice: VoiceType
 
     /// Voice playback speed for audio output.
-    /// - Valid range: 0.25 to 4.0 (per OpenAI API)
+    /// - Valid range: 0.25 to 1.5 (per OpenAI API)
     /// - Default: 1.0 (normal speed)
     public let speed: Double?
 
@@ -59,7 +59,7 @@ public struct RealtimeSession: Sendable {
     ///   - id: Session ID (assigned by server, nil for new sessions)
     ///   - model: Realtime model to use
     ///   - voice: Voice for text-to-speech
-    ///   - speed: Voice playback speed (default: 1.0, valid range: 0.25 to 4.0)
+    ///   - speed: Voice playback speed (default: 1.0, valid range: 0.25 to 1.5)
     ///   - inputAudioFormat: Input audio format
     ///   - outputAudioFormat: Output audio format
     ///   - inputAudioTranscription: Transcription config

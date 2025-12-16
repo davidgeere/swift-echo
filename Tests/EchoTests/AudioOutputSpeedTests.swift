@@ -113,9 +113,9 @@ struct AudioOutputSpeedTests {
         let minConfig = EchoConfiguration(speed: 0.25)
         #expect(minConfig.speed == 0.25)
         
-        // Test maximum expected value (4.0)
-        let maxConfig = EchoConfiguration(speed: 4.0)
-        #expect(maxConfig.speed == 4.0)
+        // Test maximum expected value (1.5)
+        let maxConfig = EchoConfiguration(speed: 1.5)
+        #expect(maxConfig.speed == 1.5)
         
         // Test normal speed
         let normalConfig = EchoConfiguration(speed: 1.0)

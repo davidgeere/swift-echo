@@ -685,7 +685,7 @@ public actor RealtimeClient: TurnManagerDelegate {
     }
 
     /// Update the audio output speed
-    /// - Parameter speed: The playback speed (0.25 to 4.0, default 1.0)
+    /// - Parameter speed: The playback speed (0.25 to 1.5, default 1.0)
     /// - Throws: RealtimeError if send fails
     public func updateSpeed(_ speed: Double) async throws {
         // Format speed to 2 decimal places
@@ -1223,7 +1223,7 @@ public struct RealtimeClientConfiguration: Sendable {
     public let voice: VoiceType
 
     /// Voice playback speed for audio output.
-    /// - Valid range: 0.25 to 4.0 (per OpenAI API)
+    /// - Valid range: 0.25 to 1.5 (per OpenAI API)
     /// - Default: 1.0 (normal speed)
     public let speed: Double
 
@@ -1264,7 +1264,7 @@ public struct RealtimeClientConfiguration: Sendable {
     /// - Parameters:
     ///   - model: Realtime model (MUST be .gptRealtime or .gptRealtimeMini)
     ///   - voice: Voice type
-    ///   - speed: Voice playback speed (default: 1.0, valid range: 0.25 to 4.0)
+    ///   - speed: Voice playback speed (default: 1.0, valid range: 0.25 to 1.5)
     ///   - audioFormat: Audio format
     ///   - turnDetection: Turn detection config
     ///   - instructions: System instructions

@@ -25,7 +25,7 @@ public struct EchoConfiguration: Sendable {
     public let voice: VoiceType
 
     /// Voice playback speed for audio output.
-    /// - Valid range: 0.25 to 4.0 (per OpenAI API)
+    /// - Valid range: 0.25 to 1.5 (per OpenAI API)
     /// - Default: 1.0 (normal speed)
     /// - Values below 1.0 slow down playback
     /// - Values above 1.0 speed up playback
@@ -101,7 +101,7 @@ public struct EchoConfiguration: Sendable {
     ///   - responsesModel: Model for text mode (default: .gpt5)
     ///   - audioFormat: Audio format (default: .pcm16)
     ///   - voice: Voice type (default: .alloy)
-    ///   - speed: Voice playback speed (default: 1.0, valid range: 0.25 to 4.0)
+    ///   - speed: Voice playback speed (default: 1.0, valid range: 0.25 to 1.5)
     ///   - defaultAudioOutput: Default audio output device (default: nil for system default)
     ///   - inputAudioConfiguration: Input audio configuration including noise reduction (default: nil)
     ///   - echoProtection: Echo protection for speaker mode (default: nil)
