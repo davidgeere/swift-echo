@@ -19,9 +19,7 @@ let package = Package(
         // Advanced stream operations for async sequences
         .package(url: "https://github.com/apple/swift-async-algorithms.git", from: "1.0.0"),
         // Swift Testing framework
-        .package(url: "https://github.com/apple/swift-testing.git", from: "0.10.0"),
-        // WebRTC framework for real-time audio/video communication
-        .package(url: "https://github.com/stasel/WebRTC.git", exact: "140.0.0")
+        .package(url: "https://github.com/apple/swift-testing.git", from: "0.10.0")
     ],
     targets: [
         .target(
@@ -29,11 +27,16 @@ let package = Package(
             dependencies: [
                 .product(name: "AsyncHTTPClient", package: "async-http-client"),
                 .product(name: "AsyncAlgorithms", package: "swift-async-algorithms"),
-                .product(name: "WebRTC", package: "WebRTC")
+                "WebRTC"
             ],
             swiftSettings: [
                 .enableExperimentalFeature("StrictConcurrency")
             ]
+        ),
+        // Local WebRTC XCFramework with dSYM support
+        .binaryTarget(
+            name: "WebRTC",
+            path: "Frameworks/WebRTC.xcframework"
         ),
         .testTarget(
             name: "EchoTests",
