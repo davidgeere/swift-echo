@@ -150,9 +150,9 @@ public struct RealtimeSession: Sendable {
         }
 
         if let speed = speed {
-            // CRITICAL: Store as string formatted to 1 decimal place
-            // Same precision handling as temperature
-            let formatted = String(format: "%.1f", speed)
+            // CRITICAL: Store as string formatted to 2 decimal places
+            // This preserves values like 0.25, 0.75, etc.
+            let formatted = String(format: "%.2f", speed)
             config["__speed_string"] = formatted
 
             print("[RealtimeSession] Speed value (formatted): \(formatted)")

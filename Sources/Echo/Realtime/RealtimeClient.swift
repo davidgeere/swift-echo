@@ -217,10 +217,11 @@ public actor RealtimeClient: TurnManagerDelegate {
             // Check if transport handles audio natively
             let handlesAudioNatively = await transport.handlesAudioNatively
 
-            // Configure session (only for WebSocket - WebRTC sends config in connect)
-            if !handlesAudioNatively {
-                try await configureSession()
-            }
+            // Configure session
+            // For WebSocket: Full session configuration
+            // For WebRTC: Send session.update for parameters that may not be in initial config
+            //            (speed is in initial config, but session.update ensures it's applied)
+            try await configureSession()
 
             // Start audio if configured (only for WebSocket - WebRTC handles audio natively)
             if configuration.startAudioAutomatically && !handlesAudioNatively {
@@ -682,6 +683,24 @@ public actor RealtimeClient: TurnManagerDelegate {
 
         try await send(.conversationItemCreate(item: item, previousItemId: nil))
         try await send(.responseCreate(response: nil))
+    }
+
+    /// Update the audio output speed
+    /// - Parameter speed: The playback speed (0.25 to 4.0, default 1.0)
+    /// - Throws: RealtimeError if send fails
+    public func updateSpeed(_ speed: Double) async throws {
+        // Format speed to 2 decimal places
+        let formattedString = String(format: "%.2f", speed)
+        guard let decimal = Decimal(string: formattedString) else {
+            return
+        }
+        
+        let sessionConfig: [String: SendableJSON] = [
+            "speed": .number(Double(truncating: NSDecimalNumber(decimal: decimal)))
+        ]
+        
+        try await send(.sessionUpdate(session: .object(sessionConfig)))
+        print("[RealtimeClient] Updated speed to: \(formattedString)")
     }
 
     /// Update the session configuration

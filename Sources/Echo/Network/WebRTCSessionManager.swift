@@ -145,8 +145,8 @@ public actor WebRTCSessionManager {
                 output["voice"] = voice
             }
             if let speed = speed {
-                // Format speed to 1 decimal place like temperature
-                let formattedString = String(format: "%.1f", speed)
+                // Format speed to 2 decimal places to preserve values like 0.25
+                let formattedString = String(format: "%.2f", speed)
                 if let decimalSpeed = Decimal(string: formattedString) {
                     output["speed"] = NSDecimalNumber(decimal: decimalSpeed)
                 }

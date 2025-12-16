@@ -80,14 +80,14 @@ struct AudioOutputSpeedTests {
     func testRealtimeSessionToRealtimeFormatIncludesSpeed() {
         let session = RealtimeSession(
             model: .gptRealtime,
-            speed: 1.3
+            speed: 1.25
         )
         
         let format = session.toRealtimeFormat()
         
         // Speed should be included using the string key format like temperature
         if let speedString = format["__speed_string"] as? String {
-            #expect(speedString == "1.3", "Speed should be formatted to 1 decimal place")
+            #expect(speedString == "1.25", "Speed should be formatted to 2 decimal places")
         } else {
             Issue.record("Speed should be included in toRealtimeFormat output")
         }
