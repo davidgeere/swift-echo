@@ -130,7 +130,7 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
             let config = WebRTCSessionManager.SessionConfiguration(
                 model: model,
                 voice: sessionConfig?["voice"] as? String,
-                speed: sessionConfig?["speed"] as? Double,
+                speed: (sessionConfig?["speed"] as? NSNumber)?.doubleValue,
                 instructions: sessionConfig?["instructions"] as? String,
                 turnDetection: sessionConfig?["turn_detection"] as? [String: Any],
                 tools: sessionConfig?["tools"] as? [[String: Any]],
