@@ -147,17 +147,31 @@ public struct RequestBuilder {
     }
 
     private static func toJSON(_ dictionary: [String: Any]) throws -> String {
-        // Check if we need to handle temperature specially
+        // Check if we need to handle temperature and speed specially
         var processedDict = dictionary
         if let type = dictionary["type"] as? String, type == "session.update",
-           var session = dictionary["session"] as? [String: Any],
-           let tempString = session["__temperature_string"] as? String {
-            // Remove the marker key and add proper temperature as decimal number
-            session.removeValue(forKey: "__temperature_string")
-            // Convert string to NSDecimalNumber to preserve exact decimal representation
-            if let decimal = Decimal(string: tempString) {
-                session["temperature"] = NSDecimalNumber(decimal: decimal)
+           var session = dictionary["session"] as? [String: Any] {
+            
+            // Handle temperature string marker
+            if let tempString = session["__temperature_string"] as? String {
+                // Remove the marker key and add proper temperature as decimal number
+                session.removeValue(forKey: "__temperature_string")
+                // Convert string to NSDecimalNumber to preserve exact decimal representation
+                if let decimal = Decimal(string: tempString) {
+                    session["temperature"] = NSDecimalNumber(decimal: decimal)
+                }
             }
+            
+            // Handle speed string marker
+            if let speedString = session["__speed_string"] as? String {
+                // Remove the marker key and add proper speed as decimal number
+                session.removeValue(forKey: "__speed_string")
+                // Convert string to NSDecimalNumber to preserve exact decimal representation
+                if let decimal = Decimal(string: speedString) {
+                    session["speed"] = NSDecimalNumber(decimal: decimal)
+                }
+            }
+            
             processedDict["session"] = session
         }
 

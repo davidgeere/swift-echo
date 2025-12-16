@@ -17,6 +17,11 @@ public struct RealtimeSession: Sendable {
     /// Voice to use for text-to-speech
     public let voice: VoiceType
 
+    /// Voice playback speed for audio output.
+    /// - Valid range: 0.25 to 1.5 (per OpenAI API)
+    /// - Default: 1.0 (normal speed)
+    public let speed: Double?
+
     /// Audio input format
     public let inputAudioFormat: AudioFormat
 
@@ -54,6 +59,7 @@ public struct RealtimeSession: Sendable {
     ///   - id: Session ID (assigned by server, nil for new sessions)
     ///   - model: Realtime model to use
     ///   - voice: Voice for text-to-speech
+    ///   - speed: Voice playback speed (default: 1.0, valid range: 0.25 to 1.5)
     ///   - inputAudioFormat: Input audio format
     ///   - outputAudioFormat: Output audio format
     ///   - inputAudioTranscription: Transcription config
@@ -68,6 +74,7 @@ public struct RealtimeSession: Sendable {
         id: String? = nil,
         model: RealtimeModel,
         voice: VoiceType = .alloy,
+        speed: Double? = 1.0,
         inputAudioFormat: AudioFormat = .pcm16,
         outputAudioFormat: AudioFormat = .pcm16,
         inputAudioTranscription: InputAudioTranscription? = InputAudioTranscription(),
@@ -82,6 +89,7 @@ public struct RealtimeSession: Sendable {
         self.id = id
         self.model = model.rawValue
         self.voice = voice
+        self.speed = speed
         self.inputAudioFormat = inputAudioFormat
         self.outputAudioFormat = outputAudioFormat
         self.inputAudioTranscription = inputAudioTranscription
@@ -139,6 +147,15 @@ public struct RealtimeSession: Sendable {
             config["__temperature_string"] = formatted
 
             print("[RealtimeSession] Temperature value (formatted): \(formatted)")
+        }
+
+        if let speed = speed {
+            // CRITICAL: Store as string formatted to 2 decimal places
+            // This preserves values like 0.25, 0.75, etc.
+            let formatted = String(format: "%.2f", speed)
+            config["__speed_string"] = formatted
+
+            print("[RealtimeSession] Speed value (formatted): \(formatted)")
         }
 
         if let maxTokens = maxResponseOutputTokens {
