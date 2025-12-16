@@ -21,7 +21,7 @@ let package = Package(
         // Swift Testing framework
         .package(url: "https://github.com/apple/swift-testing.git", from: "0.10.0"),
         // WebRTC framework for real-time audio/video communication
-        .package(url: "https://github.com/stasel/WebRTC.git", from: "141.0.0")
+        .package(url: "https://github.com/stasel/WebRTC.git", exact: "140.0.0")
     ],
     targets: [
         .target(
