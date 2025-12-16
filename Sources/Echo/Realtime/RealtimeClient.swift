@@ -217,11 +217,10 @@ public actor RealtimeClient: TurnManagerDelegate {
             // Check if transport handles audio natively
             let handlesAudioNatively = await transport.handlesAudioNatively
 
-            // Configure session
-            // For WebSocket: Full session configuration
-            // For WebRTC: Send session.update for parameters that may not be in initial config
-            //            (speed is in initial config, but session.update ensures it's applied)
-            try await configureSession()
+            // Configure session (only for WebSocket - WebRTC sends config in connect)
+            if !handlesAudioNatively {
+                try await configureSession()
+            }
 
             // Start audio if configured (only for WebSocket - WebRTC handles audio natively)
             if configuration.startAudioAutomatically && !handlesAudioNatively {
