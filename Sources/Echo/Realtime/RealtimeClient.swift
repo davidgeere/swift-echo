@@ -684,24 +684,6 @@ public actor RealtimeClient: TurnManagerDelegate {
         try await send(.responseCreate(response: nil))
     }
 
-    /// Update the audio output speed
-    /// - Parameter speed: The playback speed (0.25 to 1.5, default 1.0)
-    /// - Throws: RealtimeError if send fails
-    public func updateSpeed(_ speed: Double) async throws {
-        // Format speed to 2 decimal places
-        let formattedString = String(format: "%.2f", speed)
-        guard let decimal = Decimal(string: formattedString) else {
-            return
-        }
-        
-        let sessionConfig: [String: SendableJSON] = [
-            "speed": .number(Double(truncating: NSDecimalNumber(decimal: decimal)))
-        ]
-        
-        try await send(.sessionUpdate(session: .object(sessionConfig)))
-        print("[RealtimeClient] Updated speed to: \(formattedString)")
-    }
-
     /// Update the session configuration
     /// - Parameter turnDetection: The turn detection mode to use
     /// - Throws: RealtimeError if send fails
