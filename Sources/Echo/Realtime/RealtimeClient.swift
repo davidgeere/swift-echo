@@ -265,6 +265,7 @@ public actor RealtimeClient: TurnManagerDelegate {
         }
         
         config["voice"] = configuration.voice.rawValue
+        config["speed"] = configuration.speed
         
         if let turnDetection = configuration.turnDetection,
            let turnDetectionConfig = turnDetection.toRealtimeFormat() {
@@ -899,10 +900,11 @@ public actor RealtimeClient: TurnManagerDelegate {
 
         let toolsJSON: [SendableJSON]? = allToolsJSON.isEmpty ? nil : allToolsJSON
 
-        // Temperature rounding is handled in RealtimeSession.toRealtimeFormat()
+        // Temperature and speed rounding is handled in RealtimeSession.toRealtimeFormat()
         let session = RealtimeSession(
             model: configuration.model,
             voice: configuration.voice,
+            speed: configuration.speed,
             inputAudioFormat: configuration.audioFormat,
             outputAudioFormat: configuration.audioFormat,
             inputAudioTranscription: configuration.enableTranscription ? InputAudioTranscription() : nil,
@@ -1202,6 +1204,11 @@ public struct RealtimeClientConfiguration: Sendable {
     /// Voice for text-to-speech
     public let voice: VoiceType
 
+    /// Voice playback speed for audio output.
+    /// - Valid range: 0.25 to 4.0 (per OpenAI API)
+    /// - Default: 1.0 (normal speed)
+    public let speed: Double
+
     /// Audio format for input and output
     public let audioFormat: AudioFormat
 
@@ -1239,6 +1246,7 @@ public struct RealtimeClientConfiguration: Sendable {
     /// - Parameters:
     ///   - model: Realtime model (MUST be .gptRealtime or .gptRealtimeMini)
     ///   - voice: Voice type
+    ///   - speed: Voice playback speed (default: 1.0, valid range: 0.25 to 4.0)
     ///   - audioFormat: Audio format
     ///   - turnDetection: Turn detection config
     ///   - instructions: System instructions
@@ -1253,6 +1261,7 @@ public struct RealtimeClientConfiguration: Sendable {
     public init(
         model: RealtimeModel,
         voice: VoiceType = .alloy,
+        speed: Double = 1.0,
         audioFormat: AudioFormat = .pcm16,
         turnDetection: TurnDetection? = .default,
         instructions: String? = nil,
@@ -1267,6 +1276,7 @@ public struct RealtimeClientConfiguration: Sendable {
     ) {
         self.model = model
         self.voice = voice
+        self.speed = speed
         self.audioFormat = audioFormat
         self.turnDetection = turnDetection
         self.instructions = instructions

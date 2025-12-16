@@ -31,6 +31,7 @@ public actor WebRTCSessionManager {
         public let type: String
         public let model: String
         public let voice: String?
+        public let speed: Double?
         public let instructions: String?
         public let turnDetectionJSON: String?
         public let toolsJSON: String?
@@ -39,6 +40,7 @@ public actor WebRTCSessionManager {
         public init(
             model: String,
             voice: String? = nil,
+            speed: Double? = nil,
             instructions: String? = nil,
             turnDetection: [String: Any]? = nil,
             tools: [[String: Any]]? = nil,
@@ -47,6 +49,7 @@ public actor WebRTCSessionManager {
             self.type = "realtime"
             self.model = model
             self.voice = voice
+            self.speed = speed
             self.instructions = instructions
             
             // Convert to JSON strings for Sendable compliance
@@ -140,6 +143,14 @@ public actor WebRTCSessionManager {
             ]
             if let voice = voice {
                 output["voice"] = voice
+            }
+            if let speed = speed {
+                // Format speed to 1 decimal place like temperature
+                let formattedString = String(format: "%.1f", speed)
+                if let decimalSpeed = Decimal(string: formattedString) {
+                    output["speed"] = NSDecimalNumber(decimal: decimalSpeed)
+                }
+                print("[DEBUG] 🔧 Adding speed to output: \(formattedString)")
             }
             audio["output"] = output
             
