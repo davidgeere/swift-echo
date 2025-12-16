@@ -4,4 +4,9 @@ CLAUDE.md
 .claude
 .cursor
 .build
+.swiftpm
 Package.resolved
+
+# dSYM files are too large for git
+*.dSYM
+**/dSYMs/
