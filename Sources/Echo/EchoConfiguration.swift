@@ -86,6 +86,13 @@ public struct EchoConfiguration: Sendable {
     /// native media tracks instead of base64-encoded audio.
     public let transportType: RealtimeTransportType
 
+    // MARK: - Session Timeout
+
+    /// Idle timeout in milliseconds before the session automatically closes.
+    /// When set, the session will close after this duration of inactivity.
+    /// Default: nil (use OpenAI default of 15 minutes)
+    public let idleTimeoutMs: Int?
+
     // MARK: - Logging
 
     /// Logging level for debugging.
@@ -111,6 +118,7 @@ public struct EchoConfiguration: Sendable {
     ///   - reasoningEffort: Reasoning depth control (default: .none to minimize reasoning)
     ///   - systemMessage: Default system instructions for all conversations (default: nil)
     ///   - enableTranscription: Enable audio transcription (default: true)
+    ///   - idleTimeoutMs: Idle timeout in milliseconds before session closes (default: nil for OpenAI default)
     ///   - transportType: Transport type for Realtime API (default: .webRTC)
     ///   - logLevel: Logging verbosity (default: .info)
     public init(
@@ -129,6 +137,7 @@ public struct EchoConfiguration: Sendable {
         reasoningEffort: ReasoningEffort = .none,
         systemMessage: String? = nil,
         enableTranscription: Bool = true,
+        idleTimeoutMs: Int? = nil,
         transportType: RealtimeTransportType = .webRTC,
         logLevel: LogLevel = .info
     ) {
@@ -147,6 +156,7 @@ public struct EchoConfiguration: Sendable {
         self.reasoningEffort = reasoningEffort
         self.systemMessage = systemMessage
         self.enableTranscription = enableTranscription
+        self.idleTimeoutMs = idleTimeoutMs
         self.transportType = transportType
         self.logLevel = logLevel
     }
@@ -193,6 +203,7 @@ public struct EchoConfiguration: Sendable {
             defaultAudioOutput: defaultAudioOutput,
             echoProtection: echoProtection,
             inputAudioConfiguration: inputAudioConfiguration,
+            idleTimeoutMs: idleTimeoutMs,
             transportType: transportType
         )
     }

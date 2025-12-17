@@ -36,6 +36,8 @@ public actor WebRTCSessionManager {
         public let turnDetectionJSON: String?
         public let toolsJSON: String?
         public let transcriptionJSON: String?  // SOLVE-4: Add transcription config
+        public let inputAudioJSON: String?  // Input audio configuration (noise reduction)
+        public let idleTimeoutMs: Int?  // Idle timeout in milliseconds
         
         public init(
             model: String,
@@ -44,7 +46,9 @@ public actor WebRTCSessionManager {
             instructions: String? = nil,
             turnDetection: [String: Any]? = nil,
             tools: [[String: Any]]? = nil,
-            transcription: [String: Any]? = nil  // SOLVE-4: Add transcription parameter
+            transcription: [String: Any]? = nil,  // SOLVE-4: Add transcription parameter
+            inputAudio: [String: Any]? = nil,  // Input audio configuration
+            idleTimeoutMs: Int? = nil  // Idle timeout
         ) {
             self.type = "realtime"
             self.model = model
@@ -104,6 +108,17 @@ public actor WebRTCSessionManager {
             } else {
                 self.transcriptionJSON = nil
             }
+            
+            // Convert input audio config to JSON string
+            if let inputAudio = inputAudio,
+               let data = try? JSONSerialization.data(withJSONObject: inputAudio) {
+                self.inputAudioJSON = String(data: data, encoding: .utf8)
+            } else {
+                self.inputAudioJSON = nil
+            }
+            
+            // Store idle timeout
+            self.idleTimeoutMs = idleTimeoutMs
         }
         
         func toJSON() -> [String: Any] {
@@ -180,6 +195,12 @@ public actor WebRTCSessionManager {
                     print("[DEBUG-SOLVE-1] 🔧 Fixed threshold in toJSON: \(threshold) → \(decimalThreshold)")
                 }
                 
+                // Add idle timeout to turn_detection if specified (nullable field)
+                if let idleTimeoutMs = idleTimeoutMs {
+                    turnDetection["idle_timeout_ms"] = idleTimeoutMs
+                    print("[DEBUG] 🔧 Adding idle_timeout_ms to turn_detection: \(idleTimeoutMs)")
+                }
+                
                 if var inputAudio = session["audio"] as? [String: Any],
                    var inputConfig = inputAudio["input"] as? [String: Any] {
                     inputConfig["turn_detection"] = turnDetection
@@ -193,6 +214,21 @@ public actor WebRTCSessionManager {
                let tools = try? JSONSerialization.jsonObject(with: toolsData) as? [[String: Any]],
                !tools.isEmpty {
                 session["tools"] = tools
+            }
+            
+            // Add input audio configuration (noise reduction) to input
+            if let inputAudioJSON = inputAudioJSON,
+               let inputAudioData = inputAudioJSON.data(using: .utf8),
+               let inputAudioConfig = try? JSONSerialization.jsonObject(with: inputAudioData) as? [String: Any] {
+                if var audioConfig = session["audio"] as? [String: Any],
+                   var inputConfig = audioConfig["input"] as? [String: Any] {
+                    // Merge noise reduction into input config
+                    for (key, value) in inputAudioConfig {
+                        inputConfig[key] = value
+                    }
+                    audioConfig["input"] = inputConfig
+                    session["audio"] = audioConfig
+                }
             }
             
             return ["session": session]

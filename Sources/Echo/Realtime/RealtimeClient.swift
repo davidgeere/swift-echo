@@ -268,7 +268,12 @@ public actor RealtimeClient: TurnManagerDelegate {
         config["speed"] = configuration.speed
         
         if let turnDetection = configuration.turnDetection,
-           let turnDetectionConfig = turnDetection.toRealtimeFormat() {
+           var turnDetectionConfig = turnDetection.toRealtimeFormat() {
+            // Add idle timeout to turn_detection if specified (nullable field)
+            if let idleTimeoutMs = configuration.idleTimeoutMs {
+                turnDetectionConfig["idle_timeout_ms"] = idleTimeoutMs
+                print("[RealtimeClient] Adding idle_timeout_ms to turn_detection: \(idleTimeoutMs)")
+            }
             config["turn_detection"] = turnDetectionConfig
         }
         
@@ -277,6 +282,11 @@ public actor RealtimeClient: TurnManagerDelegate {
         config["transcription"] = [
             "model": "whisper-1"
         ]
+        
+        // Add input audio configuration (noise reduction)
+        if let inputAudioConfig = configuration.inputAudioConfiguration?.toRealtimeFormat() {
+            config["input_audio"] = inputAudioConfig
+        }
         
         // Convert tools to config format
         if !tools.isEmpty {
@@ -913,7 +923,8 @@ public actor RealtimeClient: TurnManagerDelegate {
             instructions: configuration.instructions,
             tools: toolsJSON,
             temperature: configuration.temperature,
-            maxResponseOutputTokens: configuration.maxOutputTokens
+            maxResponseOutputTokens: configuration.maxOutputTokens,
+            idleTimeoutMs: configuration.idleTimeoutMs
         )
 
         let sessionDict = session.toRealtimeFormat()
@@ -1239,6 +1250,9 @@ public struct RealtimeClientConfiguration: Sendable {
     /// Input audio configuration (noise reduction)
     public let inputAudioConfiguration: InputAudioConfiguration?
 
+    /// Idle timeout in milliseconds before the session closes
+    public let idleTimeoutMs: Int?
+
     /// Transport type for connecting to the Realtime API
     public let transportType: RealtimeTransportType
 
@@ -1257,6 +1271,7 @@ public struct RealtimeClientConfiguration: Sendable {
     ///   - defaultAudioOutput: Default audio output device
     ///   - echoProtection: Echo protection configuration
     ///   - inputAudioConfiguration: Input audio configuration (noise reduction)
+    ///   - idleTimeoutMs: Idle timeout in milliseconds before session closes
     ///   - transportType: Transport type (WebSocket or WebRTC)
     public init(
         model: RealtimeModel,
@@ -1272,6 +1287,7 @@ public struct RealtimeClientConfiguration: Sendable {
         defaultAudioOutput: AudioOutputDeviceType? = nil,
         echoProtection: EchoProtectionConfiguration? = nil,
         inputAudioConfiguration: InputAudioConfiguration? = nil,
+        idleTimeoutMs: Int? = nil,
         transportType: RealtimeTransportType = .webRTC
     ) {
         self.model = model
@@ -1287,6 +1303,7 @@ public struct RealtimeClientConfiguration: Sendable {
         self.defaultAudioOutput = defaultAudioOutput
         self.echoProtection = echoProtection
         self.inputAudioConfiguration = inputAudioConfiguration
+        self.idleTimeoutMs = idleTimeoutMs
         self.transportType = transportType
     }
 

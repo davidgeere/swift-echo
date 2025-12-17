@@ -127,6 +127,7 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
             
             // Step 3: Build session configuration
             // SOLVE-4: Include transcription configuration for WebRTC
+            // Pass all settings through to ephemeral key request
             let config = WebRTCSessionManager.SessionConfiguration(
                 model: model,
                 voice: sessionConfig?["voice"] as? String,
@@ -134,7 +135,9 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
                 instructions: sessionConfig?["instructions"] as? String,
                 turnDetection: sessionConfig?["turn_detection"] as? [String: Any],
                 tools: sessionConfig?["tools"] as? [[String: Any]],
-                transcription: sessionConfig?["transcription"] as? [String: Any]
+                transcription: sessionConfig?["transcription"] as? [String: Any],
+                inputAudio: sessionConfig?["input_audio"] as? [String: Any],
+                idleTimeoutMs: (sessionConfig?["idle_timeout_ms"] as? NSNumber)?.intValue
             )
             
             // Step 4: Fetch ephemeral key (invisible to developer)

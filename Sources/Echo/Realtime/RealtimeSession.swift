@@ -52,6 +52,9 @@ public struct RealtimeSession: Sendable {
     /// Maximum output tokens per response
     public let maxResponseOutputTokens: Int?
 
+    /// Idle timeout in milliseconds before the session closes
+    public let idleTimeoutMs: Int?
+
     // MARK: - Initialization
 
     /// Creates a session configuration
@@ -70,6 +73,7 @@ public struct RealtimeSession: Sendable {
     ///   - toolChoice: Tool choice strategy
     ///   - temperature: Sampling temperature
     ///   - maxResponseOutputTokens: Max output tokens
+    ///   - idleTimeoutMs: Idle timeout in milliseconds before session closes
     public init(
         id: String? = nil,
         model: RealtimeModel,
@@ -84,7 +88,8 @@ public struct RealtimeSession: Sendable {
         tools: [SendableJSON]? = nil,
         toolChoice: String? = nil,
         temperature: Double? = 0.8,
-        maxResponseOutputTokens: Int? = nil
+        maxResponseOutputTokens: Int? = nil,
+        idleTimeoutMs: Int? = nil
     ) {
         self.id = id
         self.model = model.rawValue
@@ -100,6 +105,7 @@ public struct RealtimeSession: Sendable {
         self.toolChoice = toolChoice
         self.temperature = temperature
         self.maxResponseOutputTokens = maxResponseOutputTokens
+        self.idleTimeoutMs = idleTimeoutMs
     }
 
     // MARK: - Conversion
@@ -122,8 +128,13 @@ public struct RealtimeSession: Sendable {
             config["input_audio"] = inputAudioConfig
         }
 
-        if let turnDetection = turnDetection?.toRealtimeFormat() {
-            config["turn_detection"] = turnDetection
+        if var turnDetectionConfig = turnDetection?.toRealtimeFormat() {
+            // Add idle timeout to turn_detection if specified (nullable field)
+            if let idleTimeoutMs = idleTimeoutMs {
+                turnDetectionConfig["idle_timeout_ms"] = idleTimeoutMs
+                print("[RealtimeSession] Adding idle_timeout_ms to turn_detection: \(idleTimeoutMs)")
+            }
+            config["turn_detection"] = turnDetectionConfig
         }
 
         if let instructions = instructions {

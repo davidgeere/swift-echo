@@ -149,7 +149,7 @@ public class Conversation: RealtimeClientDelegate {
         }
         turnManager = TurnManager(mode: turnMode, eventEmitter: eventEmitter)
 
-        // Create Realtime client configuration with systemMessage
+        // Create Realtime client configuration with all settings from EchoConfiguration
         let realtimeConfig = RealtimeClientConfiguration(
             model: configuration.realtimeModel,
             voice: configuration.voice,
@@ -160,7 +160,12 @@ public class Conversation: RealtimeClientDelegate {
             enableTranscription: configuration.enableTranscription,
             startAudioAutomatically: true,
             temperature: configuration.temperature,
-            maxOutputTokens: configuration.maxTokens
+            maxOutputTokens: configuration.maxTokens,
+            defaultAudioOutput: configuration.defaultAudioOutput,
+            echoProtection: configuration.echoProtection,
+            inputAudioConfiguration: configuration.inputAudioConfiguration,
+            idleTimeoutMs: configuration.idleTimeoutMs,
+            transportType: configuration.transportType
         )
 
         // Create RealtimeClient with delegate (self) for direct calls
@@ -725,7 +730,7 @@ public class Conversation: RealtimeClientDelegate {
         
         // Send each message as a conversation item
         for message in messages {
-            let contentType = message.role == .user ? "input_text" : "text"
+            let contentType = message.role == .user ? "input_text" : "output_text"
             let itemDict: [String: Any] = [
                 "type": "message",
                 "role": message.role.rawValue,
