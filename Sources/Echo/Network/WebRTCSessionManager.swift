@@ -128,10 +128,10 @@ public actor WebRTCSessionManager {
             var session: [String: Any] = [
                 "type": type,
                 "model": model,
-                "modalities": modalities
+                "output_modalities": modalities
             ]
             
-            print("[DEBUG-MODALITIES] 🎯 Session modalities: \(modalities)")
+            print("[DEBUG-MODALITIES] 🎯 Session output_modalities: \(modalities)")
             
             // Audio configuration (GA API format)
             var audio: [String: Any] = [:]
