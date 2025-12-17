@@ -269,7 +269,7 @@ public actor EmbeddingsClient {
     /// Logs a message if logging is enabled
     private func log(_ message: String) {
         if enableLogging {
-            print("[EmbeddingsClient] \(message)")
+            print("[EmbeddingsAPI/HTTP] \(message)")
         }
     }
     

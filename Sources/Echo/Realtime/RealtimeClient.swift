@@ -272,7 +272,7 @@ public actor RealtimeClient: TurnManagerDelegate {
             // Add idle timeout to turn_detection if specified (nullable field)
             if let idleTimeoutMs = configuration.idleTimeoutMs {
                 turnDetectionConfig["idle_timeout_ms"] = idleTimeoutMs
-                print("[RealtimeClient] Adding idle_timeout_ms to turn_detection: \(idleTimeoutMs)")
+                print("[RealtimeAPI] Adding idle_timeout_ms to turn_detection: \(idleTimeoutMs)")
             }
             config["turn_detection"] = turnDetectionConfig
         }
@@ -512,10 +512,10 @@ public actor RealtimeClient: TurnManagerDelegate {
                     await self.eventEmitter.emit(.outputLevelsChanged(levels: levels))
                 }
             }
-            print("[RealtimeClient] ✅ Started WebRTC output level monitoring")
+            print("[RealtimeAPI] ✅ Started WebRTC output level monitoring")
         }
         
-        print("[RealtimeClient] ✅ Started audio level monitoring (transport-agnostic)")
+        print("[RealtimeAPI] ✅ Started audio level monitoring (transport-agnostic)")
     }
 
     /// Mutes or unmutes audio input
@@ -767,7 +767,7 @@ public actor RealtimeClient: TurnManagerDelegate {
         // Update local tracking
         currentOutputModality = modality
         
-        print("[RealtimeClient] Output modality updated to: \(modality)")
+        print("[RealtimeAPI] Output modality updated to: \(modality)")
     }
     
     /// The current output modality of the session.

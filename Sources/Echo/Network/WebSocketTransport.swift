@@ -59,7 +59,7 @@ public actor WebSocketTransport: RealtimeTransportProtocol {
     ///   - sessionConfigJSON: Optional session configuration as JSON (not used during connect for WebSocket)
     /// - Throws: RealtimeTransportError if connection fails
     public func connect(apiKey: String, model: String, sessionConfigJSON: String?) async throws {
-        print("[WebSocketTransport] 🔌 Connecting to Realtime API with model: \(model)")
+        print("[RealtimeAPI/WebSocket] 🔌 Connecting to Realtime API with model: \(model)")
         
         guard !_isConnected else {
             throw RealtimeTransportError.alreadyConnected
@@ -91,7 +91,7 @@ public actor WebSocketTransport: RealtimeTransportProtocol {
         let task = session.webSocketTask(with: request)
         self.webSocketTask = task
         
-        print("[WebSocketTransport] 🚀 Resuming WebSocket task...")
+        print("[RealtimeAPI/WebSocket] 🚀 Resuming WebSocket task...")
         task.resume()
         
         // Mark as connected
@@ -102,21 +102,21 @@ public actor WebSocketTransport: RealtimeTransportProtocol {
         
         // Yield connection state
         connectionStateContinuation.yield(true)
-        print("[WebSocketTransport] ✅ WebSocket connection successful")
+        print("[RealtimeAPI/WebSocket] ✅ WebSocket connection successful")
     }
     
     /// Disconnects from the WebSocket gracefully
     public func disconnect() async {
         guard _isConnected else { return }
         
-        print("[WebSocketTransport] 🔌 Disconnecting gracefully...")
+        print("[RealtimeAPI/WebSocket] 🔌 Disconnecting gracefully...")
         
         isIntentionalDisconnect = true
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         cleanupResources()
         connectionStateContinuation.yield(false)
         
-        print("[WebSocketTransport] ✅ Disconnected cleanly")
+        print("[RealtimeAPI/WebSocket] ✅ Disconnected cleanly")
     }
     
     /// Sends a client event as JSON to the server
@@ -198,7 +198,7 @@ public actor WebSocketTransport: RealtimeTransportProtocol {
             }
         } catch {
             if !isIntentionalDisconnect {
-                print("[WebSocketTransport] ❌ Receive error: \(error)")
+                print("[RealtimeAPI/WebSocket] ❌ Receive error: \(error)")
             }
             handleDisconnection()
         }

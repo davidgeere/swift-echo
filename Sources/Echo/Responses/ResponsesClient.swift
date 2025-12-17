@@ -514,7 +514,7 @@ public actor ResponsesClient {
     /// Logs a message if logging is enabled
     private func log(_ message: String) {
         if enableLogging {
-            print("[ResponsesClient] \(message)")
+            print("[ResponsesAPI/HTTP] \(message)")
         }
     }
 }

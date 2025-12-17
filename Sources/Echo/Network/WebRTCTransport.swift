@@ -107,7 +107,7 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
     ///   - sessionConfigJSON: Optional session configuration as JSON string
     /// - Throws: RealtimeTransportError if connection fails
     public func connect(apiKey: String, model: String, sessionConfigJSON: String?) async throws {
-        print("[WebRTCTransport] 🔌 Connecting to Realtime API with WebRTC...")
+        print("[RealtimeAPI/WebRTC] 🔌 Connecting to Realtime API with WebRTC...")
         
         guard !_isConnected else {
             throw RealtimeTransportError.alreadyConnected
@@ -151,7 +151,7 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
             
             _isConnected = true
             connectionStateContinuation.yield(true)
-            print("[WebRTCTransport] ✅ WebRTC connection established")
+            print("[RealtimeAPI/WebRTC] ✅ WebRTC connection established")
             
         } catch {
             await cleanup()
@@ -163,13 +163,13 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
     public func disconnect() async {
         guard _isConnected else { return }
         
-        print("[WebRTCTransport] 🔌 Disconnecting WebRTC...")
+        print("[RealtimeAPI/WebRTC] 🔌 Disconnecting WebRTC...")
         
         isIntentionalDisconnect = true
         await cleanup()
         connectionStateContinuation.yield(false)
         
-        print("[WebRTCTransport] ✅ Disconnected cleanly")
+        print("[RealtimeAPI/WebRTC] ✅ Disconnected cleanly")
     }
     
     /// Sends a client event as JSON via the data channel
@@ -196,7 +196,7 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
             throw RealtimeTransportError.dataChannelFailed("Failed to send data")
         }
         
-        print("[WebRTCTransport] 📤 Sent: \(eventJSON.prefix(100))...")
+        print("[RealtimeAPI/WebRTC] 📤 Sent: \(eventJSON.prefix(100))...")
     }
     
     /// WebRTC handles audio natively - this throws an error
@@ -219,7 +219,7 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
         
         // Enable the audio track
         localAudioTrack?.isEnabled = true
-        print("[WebRTCTransport] 🎤 Local audio setup complete")
+        print("[RealtimeAPI/WebRTC] 🎤 Local audio setup complete")
     }
     
     /// Mutes or unmutes the local audio input
@@ -234,7 +234,7 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
     
     /// Sets up the WebRTC peer connection and exchanges SDP
     private func setupWebRTCConnection(ephemeralKey: String, model: String) async throws {
-        print("[WebRTCTransport] 📡 Setting up WebRTC peer connection...")
+        print("[RealtimeAPI/WebRTC] 📡 Setting up WebRTC peer connection...")
         
         // Initialize WebRTC factory
         RTCInitializeSSL()
@@ -392,7 +392,7 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
             }
         }
         
-        print("[WebRTCTransport] 📝 Created SDP offer, exchanging with OpenAI...")
+        print("[RealtimeAPI/WebRTC] 📝 Created SDP offer, exchanging with OpenAI...")
         
         // Exchange SDP with OpenAI
         let sdpAnswer = try await sessionManager.exchangeSDP(
@@ -412,13 +412,13 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
             }
         }
         
-        print("[WebRTCTransport] ✅ SDP exchange complete, connection established")
+        print("[RealtimeAPI/WebRTC] ✅ SDP exchange complete, connection established")
     }
     
     // MARK: - Event Handlers
     
     private func handleConnectionStateChange(_ state: RTCPeerConnectionState) {
-        print("[WebRTCTransport] 🔗 Connection state: \(state.rawValue)")
+        print("[RealtimeAPI/WebRTC] 🔗 Connection state: \(state.rawValue)")
         
         switch state {
         case .connected:
@@ -435,11 +435,11 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
     }
     
     private func handleIceConnectionStateChange(_ state: RTCIceConnectionState) {
-        print("[WebRTCTransport] 🧊 ICE state: \(state.rawValue)")
+        print("[RealtimeAPI/WebRTC] 🧊 ICE state: \(state.rawValue)")
     }
     
     private func handleRemoteAudioTrack(_ track: RTCAudioTrack) {
-        print("[WebRTCTransport] 🔊 Remote audio track received, enabling playback")
+        print("[RealtimeAPI/WebRTC] 🔊 Remote audio track received, enabling playback")
         
         // Enable the track so audio plays through the speaker
         track.isEnabled = true
@@ -590,10 +590,10 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
     }
     
     private func handleDataChannelStateChange(_ state: RTCDataChannelState) {
-        print("[WebRTCTransport] 📡 Data channel state: \(state.rawValue)")
+        print("[RealtimeAPI/WebRTC] 📡 Data channel state: \(state.rawValue)")
         
         if state == .open {
-            print("[WebRTCTransport] ✅ Data channel opened")
+            print("[RealtimeAPI/WebRTC] ✅ Data channel opened")
         }
     }
     

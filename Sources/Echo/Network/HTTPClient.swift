@@ -185,7 +185,7 @@ public actor HTTPClient: HTTPClientProtocol {
 
                     // DEBUG: Print request body
                     if let bodyString = String(data: bodyData, encoding: .utf8) {
-                        print("📤 [HTTPClient] Streaming request to \(endpoint):")
+                        print("📤 [ResponsesAPI/SSE] Streaming request to \(endpoint):")
                         print(bodyString)
                     }
 

@@ -729,18 +729,22 @@ public class Conversation: RealtimeClientDelegate {
         
         await eventEmitter.emit(.modeSwitching(from: enabled ? .text : .audio, to: enabled ? .audio : .text))
         
-        // Update server-side output modality
+        // Update server-side output modality (no history resend!)
+        print("[RealtimeAPI] 📤 Updating output modality to: \(targetModality)")
         try await client.updateOutputModality(targetModality)
         
         // Start or stop audio engine based on the new state
         if enabled {
+            print("[RealtimeAPI] 🎙️ Starting audio capture and playback")
             try await client.startAudio()
             mode = .audio
         } else {
+            print("[RealtimeAPI] 🔇 Stopping audio capture and playback")
             await client.stopAudio()
             mode = .text
         }
         
+        print("[RealtimeAPI] ✅ Mode switched to \(mode) (context preserved)")
         await eventEmitter.emit(.modeSwitched(to: mode))
     }
 
@@ -756,11 +760,13 @@ public class Conversation: RealtimeClientDelegate {
         
         // Use the new audio toggle approach if we have a realtime client
         if realtimeClient != nil {
+            print("[RealtimeAPI] 🔄 Switching modality within session (no history resend)")
             try await setAudioEnabled(newMode == .audio)
             return
         }
 
         // Legacy path for when starting in text mode with Responses API
+        print("[Echo] ⚠️ Using legacy API switch path (will resend history)")
         await eventEmitter.emit(.modeSwitching(from: mode, to: newMode))
 
         switch (mode, newMode) {
@@ -778,19 +784,26 @@ public class Conversation: RealtimeClientDelegate {
 
     private func transitionAudioToText() async throws {
         // For legacy Responses API path: Disconnect Realtime WebSocket
+        print("[Echo] ⚠️ Legacy mode switch: RealtimeAPI → ResponsesAPI")
+        print("[RealtimeAPI] 🔌 Disconnecting WebRTC/WebSocket session...")
         await realtimeClient?.disconnect()
         realtimeClient = nil
         turnManager = nil
 
         // Initialize Responses client
+        print("[ResponsesAPI/HTTP] 🔌 Initializing HTTP client...")
         try await initializeTextMode()
+        print("[ResponsesAPI/HTTP] ✅ Ready for text mode")
     }
 
     private func transitionTextToAudio() async throws {
         // Get conversation history
         let messages = await messageQueue.getOrderedMessages()
+        print("[Echo] ⚠️ Legacy mode switch: ResponsesAPI → RealtimeAPI")
+        print("[Echo] 📤 Will resend \(messages.count) messages to new session (this is expensive!)")
 
         // Initialize Realtime WebSocket FIRST (before destroying responses client)
+        print("[RealtimeAPI] 🔌 Creating new WebRTC/WebSocket session...")
         try await initializeAudioMode()
 
         // Clean up Responses client only AFTER successful audio initialization
@@ -802,7 +815,8 @@ public class Conversation: RealtimeClientDelegate {
         }
         
         // Send each message as a conversation item
-        for message in messages {
+        print("[RealtimeAPI] 📤 Resending \(messages.count) history messages...")
+        for (index, message) in messages.enumerated() {
             let contentType = message.role == .user ? "input_text" : "output_text"
             let itemDict: [String: Any] = [
                 "type": "message",
@@ -817,7 +831,9 @@ public class Conversation: RealtimeClientDelegate {
 
             let sendableItem = try SendableJSON.from(dictionary: itemDict)
             try await client.send(.conversationItemCreate(item: sendableItem, previousItemId: nil))
+            print("[RealtimeAPI] 📤 Sent history message \(index + 1)/\(messages.count)")
         }
+        print("[RealtimeAPI] ✅ History resend complete")
     }
 
     // MARK: - Audio Control
