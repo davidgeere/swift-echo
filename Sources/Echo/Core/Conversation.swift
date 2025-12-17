@@ -27,11 +27,8 @@ public class Conversation: RealtimeClientDelegate {
     /// Message queue for proper sequencing
     private let messageQueue: MessageQueue
 
-    /// Realtime client for audio mode
+    /// Realtime API client (used for both audio and text modes)
     private var realtimeClient: RealtimeClient?
-
-    /// Responses client for text mode
-    private var responsesClient: ResponsesClient?
 
     /// Event emitter for publishing events
     private let eventEmitter: EventEmitter
@@ -124,52 +121,66 @@ public class Conversation: RealtimeClientDelegate {
         self.audioCaptureFactory = audioCaptureFactory
         self.audioPlaybackFactory = audioPlaybackFactory
 
-        // Initialize the appropriate client based on mode
-        switch mode {
-        case .audio:
-            try await initializeAudioMode()
-        case .text:
-            try await initializeTextMode()
-        }
+        // Always initialize Realtime API - mode just determines output modality
+        print("[RealtimeAPI] 🚀 Initializing session with mode: \(mode)")
+        try await initializeRealtimeSession(audioEnabled: mode == .audio)
     }
 
-    // MARK: - Mode Initialization
+    // MARK: - Session Initialization
 
-    private func initializeAudioMode() async throws {
-        // Create turn manager with proper mode handling
-        let turnMode: TurnManager.TurnMode
-        switch configuration.turnDetection {
-        case .automatic(let vad):
-            turnMode = .automatic(vad)
-        case .manual:
-            // Manual mode with 30-second timeout fallback
-            turnMode = .manual(timeout: .seconds(30))
-        case .disabled, .none:
-            turnMode = .disabled
+    /// Initializes the Realtime API session with the specified audio state.
+    ///
+    /// This always uses the Realtime API, regardless of mode. The mode just determines:
+    /// - Output modality (`["audio"]` vs `["text"]`)
+    /// - Whether audio capture/playback is started
+    ///
+    /// - Parameter audioEnabled: Whether to enable audio capture and playback
+    private func initializeRealtimeSession(audioEnabled: Bool) async throws {
+        // Create turn manager if audio is enabled
+        if audioEnabled {
+            let turnMode: TurnManager.TurnMode
+            switch configuration.turnDetection {
+            case .automatic(let vad):
+                turnMode = .automatic(vad)
+            case .manual:
+                turnMode = .manual(timeout: .seconds(30))
+            case .disabled, .none:
+                turnMode = .disabled
+            }
+            turnManager = TurnManager(mode: turnMode, eventEmitter: eventEmitter)
+        } else {
+            turnManager = nil
         }
-        turnManager = TurnManager(mode: turnMode, eventEmitter: eventEmitter)
 
-        // Create Realtime client configuration with all settings from EchoConfiguration
+        // Determine output modality and audio settings based on mode
+        let outputModality: OutputModality = audioEnabled ? .audio : .text
+        let startAudioAutomatically = audioEnabled
+        let enableTranscription = audioEnabled && configuration.enableTranscription
+        let turnDetection = audioEnabled ? configuration.turnDetection : nil
+        
+        print("[RealtimeAPI] 📡 Output modality: \(outputModality), audio auto-start: \(startAudioAutomatically)")
+
+        // Create Realtime client configuration
         let realtimeConfig = RealtimeClientConfiguration(
             model: configuration.realtimeModel,
             voice: configuration.voice,
             speed: configuration.speed, 
             audioFormat: configuration.audioFormat,
-            turnDetection: configuration.turnDetection,
+            outputModality: outputModality,
+            turnDetection: turnDetection,
             instructions: systemMessage,
-            enableTranscription: configuration.enableTranscription,
-            startAudioAutomatically: true,
+            enableTranscription: enableTranscription,
+            startAudioAutomatically: startAudioAutomatically,
             temperature: configuration.temperature,
             maxOutputTokens: configuration.maxTokens,
             defaultAudioOutput: configuration.defaultAudioOutput,
-            echoProtection: configuration.echoProtection,
-            inputAudioConfiguration: configuration.inputAudioConfiguration,
+            echoProtection: audioEnabled ? configuration.echoProtection : nil,
+            inputAudioConfiguration: audioEnabled ? configuration.inputAudioConfiguration : nil,
             idleTimeoutMs: configuration.idleTimeoutMs,
             transportType: configuration.transportType
         )
 
         // Create RealtimeClient with delegate (self) for direct calls
-        // No more event listener Tasks needed!
         let client = RealtimeClient(
             apiKey: apiKey,
             configuration: realtimeConfig,
@@ -178,21 +189,20 @@ public class Conversation: RealtimeClientDelegate {
             mcpServers: mcpServers,
             turnManager: turnManager,
             toolExecutor: toolExecutor,
-            delegate: self,  // Wire self as delegate for direct calls
+            delegate: self,
             audioCaptureFactory: audioCaptureFactory,
             audioPlaybackFactory: audioPlaybackFactory
         )
 
-        // Connect and start session - this may throw
+        // Connect and start session
         do {
             try await client.connect()
-            // Only assign if connection succeeds
             realtimeClient = client
             
             // Start observing audio levels from events
             startAudioLevelObservation()
+            print("[RealtimeAPI] ✅ Session initialized successfully")
         } catch {
-            // Connection failed - clean up and propagate error
             await client.disconnect()
             throw error
         }
@@ -213,18 +223,6 @@ public class Conversation: RealtimeClientDelegate {
                 }
             }
         }
-    }
-
-    private func initializeTextMode() async throws {
-        // Create Responses client - lightweight, no connection needed
-        let client = ResponsesClient(
-            apiKey: apiKey,
-            eventEmitter: eventEmitter
-        )
-        responsesClient = client
-
-        // No event listeners needed in text mode
-        // Messages are added directly to the queue by ResponsesClient
     }
 
     // MARK: - RealtimeClientDelegate
@@ -289,395 +287,77 @@ public class Conversation: RealtimeClientDelegate {
 
     // MARK: - Sending Messages
 
-    /// Sends a text message and returns the response (in text mode)
+    /// Sends a text message via the Realtime API.
+    ///
+    /// The message is sent as a text input to the Realtime API. The response
+    /// will be either audio+transcript or text-only depending on the current
+    /// output modality.
+    ///
     /// - Parameter text: The message text
-    /// - Returns: The assistant's response message (in text mode only)
+    /// - Returns: nil (responses come through events)
     /// - Throws: EchoError if sending fails
+    @discardableResult
     public func send(_ text: String) async throws -> Message? {
-        switch mode {
-        case .audio:
-            // In audio mode, send as text input (will be synthesized to speech)
-            guard let client = realtimeClient else {
-                throw EchoError.clientNotInitialized("Realtime client not initialized")
-            }
+        // Always use Realtime API
+        guard let client = realtimeClient else {
+            throw EchoError.clientNotInitialized("Realtime client not initialized")
+        }
+        
+        print("[RealtimeAPI] 📤 Sending text message: \"\(text.prefix(50))...\"")
 
-            // Create conversation item with text
-            let itemDict: [String: Any] = [
-                "type": "message",
-                "role": "user",
-                "content": [
-                    [
-                        "type": "input_text",
-                        "text": text
-                    ]
+        // Create conversation item with text
+        let itemDict: [String: Any] = [
+            "type": "message",
+            "role": "user",
+            "content": [
+                [
+                    "type": "input_text",
+                    "text": text
                 ]
             ]
+        ]
 
-            let sendableItem = try SendableJSON.from(dictionary: itemDict)
-            try await client.send(.conversationItemCreate(item: sendableItem, previousItemId: nil))
-            
-            // Only manually trigger response if NOT using automatic turn detection
-            // In automatic mode, VAD will trigger the response when it detects silence
-            if case .manual = configuration.turnDetection {
-                try await client.send(.responseCreate(response: nil))
-            }
-            
-            // Add message to queue to maintain unified history
-            _ = await messageQueue.enqueue(
-                role: .user,
-                text: text,
-                audioData: nil,
-                transcriptStatus: .completed
-            )
-            
-            // Audio mode is streaming, response will come through events
-            return nil
-
-        case .text:
-            // In text mode, send to Responses API and await response
-            guard let client = responsesClient else {
-                throw EchoError.clientNotInitialized("Responses client not initialized")
-            }
-
-            // Add message to queue
-            _ = await messageQueue.enqueue(
-                role: .user,
-                text: text,
-                audioData: nil,
-                transcriptStatus: .notApplicable
-            )
-
-            // Get conversation history
-            let history = await messageQueue.getOrderedMessages()
-
-            // Send to Responses API with streaming
-            let responsesModel = configuration.responsesModel
-
-            // Convert tools and MCP servers to ResponsesTool format
-            var allResponsesTools: [ResponsesTool] = []
-            allResponsesTools.append(contentsOf: tools.map { $0.toResponsesTool() })
-            allResponsesTools.append(contentsOf: mcpServers.map { $0.toResponsesTool() })
-
-            // Wait for stream completion using continuation
-            let assistantMessage = await withCheckedContinuation { (continuation: CheckedContinuation<Message?, Never>) in
-                Task {
-                    await client.withStreamResponse(
-                        model: responsesModel,
-                        input: history,
-                        instructions: systemMessage,
-                        tools: allResponsesTools,
-                        temperature: configuration.temperature,
-                        maxOutputTokens: configuration.maxTokens,
-                        reasoningEffort: configuration.reasoningEffort
-                    ) { stream in
-                        var assistantText = ""
-                        var finalMessageId: String? = nil
-                        
-                        do {
-                            for try await event in stream {
-                                switch event {
-                                case .responseDelta(let delta):
-                                    // Accumulate text
-                                    assistantText += delta
-                                    
-                                case .responseDone(let response):
-                                    // Extract final text if available
-                                    if let firstText = response.firstText, !firstText.isEmpty {
-                                        assistantText = firstText
-                                    }
-                                    
-                                case .responseFailed(let error):
-                                    await eventEmitter.emit(.error(error: EchoError.invalidResponse(error)))
-                                    
-                                case .raw(let type, let data):
-                                    // Handle raw events that might contain text
-                                    if type == "response.output_text.done" {
-                                        // Extract text from the raw event
-                                        if let text = data["text"]?.value as? String {
-                                            assistantText = text
-                                        }
-                                    } else if type == "response.output_item.done" {
-                                        // Alternative format for text completion
-                                        if let item = data["item"]?.value as? [String: Any],
-                                           let contentArray = item["content"] as? [[String: Any]] {
-                                            for content in contentArray {
-                                                if content["type"] as? String == "text",
-                                                   let text = content["text"] as? String {
-                                                    assistantText = text
-                                                    break
-                                                }
-                                            }
-                                        }
-                                    } else if type == "response.incomplete" {
-                                        // Handle incomplete responses (e.g., reasoning-only responses)
-                                        await eventEmitter.emit(.error(error: EchoError.invalidResponse(
-                                            "Response was incomplete - the model returned only reasoning without a text response. Try rephrasing your question or adjusting reasoning effort."
-                                        )))
-                                    }
-                                    
-                                default:
-                                    // Handle other events
-                                    break
-                                }
-                            }
-                            
-                            // After stream completes, enqueue the message
-                            if !assistantText.isEmpty {
-                                finalMessageId = await messageQueue.enqueue(
-                                    role: .assistant,
-                                    text: assistantText,
-                                    audioData: nil,
-                                    transcriptStatus: .notApplicable
-                                )
-                            }
-                        } catch {
-                            await eventEmitter.emit(.error(error: error))
-                        }
-                        
-                        // Resume with the final message
-                        if let messageId = finalMessageId {
-                            let message = await messageQueue.getMessage(byId: messageId)
-                            continuation.resume(returning: message)
-                        } else {
-                            continuation.resume(returning: nil)
-                        }
-                    }
-                }
-            }
-            
-            return assistantMessage
-        }
+        let sendableItem = try SendableJSON.from(dictionary: itemDict)
+        try await client.send(.conversationItemCreate(item: sendableItem, previousItemId: nil))
+        
+        // Always trigger response for text input (no VAD involved)
+        // In text mode or when typing in audio mode, we need to explicitly request a response
+        try await client.send(.responseCreate(response: nil))
+        
+        // Add message to queue to maintain unified history
+        _ = await messageQueue.enqueue(
+            role: .user,
+            text: text,
+            audioData: nil,
+            transcriptStatus: .completed
+        )
+        
+        // Responses come through events
+        return nil
     }
 
-    /// Sends a message with optional response format (for structured outputs)
+    /// Sends a text message via the Realtime API.
+    ///
+    /// This is an alias for `send(_:)` for backwards compatibility.
+    /// All responses come through events, not return values.
+    ///
+    /// - Note: The Realtime API does not support structured outputs (responseFormat).
+    ///   If you need structured outputs, use the ResponsesClient directly.
+    ///
     /// - Parameters:
     ///   - text: The message text
-    ///   - responseFormat: Optional response format for structured outputs (text mode only)
-    /// - Returns: The assistant's response message (for non-streaming use cases)
+    ///   - responseFormat: Ignored. Realtime API does not support structured outputs.
+    /// - Returns: nil (responses come through events)
     /// - Throws: EchoError if sending fails
+    @discardableResult
     public func sendMessage(
         _ text: String,
         responseFormat: ResponseFormat? = nil
     ) async throws -> Message? {
-        switch mode {
-        case .audio:
-            // In audio mode, responseFormat is not applicable
-            if responseFormat != nil {
-                print("[Conversation] Warning: responseFormat is ignored in audio mode")
-            }
-            _ = try await send(text)
-            return nil  // Audio mode is always streaming
-            
-        case .text:
-            // In text mode, send to Responses API with optional format
-            guard let client = responsesClient else {
-                throw EchoError.clientNotInitialized("Responses client not initialized")
-            }
-            
-            // Add user message to queue
-            _ = await messageQueue.enqueue(
-                role: .user,
-                text: text,
-                audioData: nil,
-                transcriptStatus: .notApplicable
-            )
-            
-            // Get conversation history
-            let history = await messageQueue.getOrderedMessages()
-            
-            // Convert tools and MCP servers to ResponsesTool format
-            var allResponsesTools: [ResponsesTool] = []
-            allResponsesTools.append(contentsOf: tools.map { $0.toResponsesTool() })
-            allResponsesTools.append(contentsOf: mcpServers.map { $0.toResponsesTool() })
-            
-            // If responseFormat is provided and JSON mode requested, use non-streaming
-            if let format = responseFormat {
-                // Non-streaming for structured outputs
-                let response = try await client.createResponseWithFormat(
-                    model: configuration.responsesModel,
-                    input: history,
-                    instructions: systemMessage,
-                    tools: allResponsesTools,
-                    temperature: configuration.temperature,
-                    maxOutputTokens: configuration.maxTokens,
-                    responseFormat: format
-                )
-                
-                // Try to extract text from the response
-                var responseText: String? = response.firstText
-                
-                // If no text found via firstText, try to extract from output items
-                if responseText == nil && !response.output.isEmpty {
-                    // Look through output items for message content
-                    for outputItem in response.output {
-                        if case .message(let message) = outputItem {
-                            // Extract text from message content parts
-                            for contentPart in message.content {
-                                if case .text(let text) = contentPart {
-                                    responseText = text
-                                    break
-                                }
-                            }
-                            if responseText != nil {
-                                break
-                            }
-                        }
-                    }
-                }
-                
-                // Extract and enqueue response message
-                if let firstItem = responseText {
-                    let messageId = await messageQueue.enqueue(
-                        role: .assistant,
-                        text: firstItem,
-                        audioData: nil,
-                        transcriptStatus: .notApplicable
-                    )
-                    
-                    // Return the created message
-                    let message = await messageQueue.getMessage(byId: messageId)
-                    return message
-                }
-                return nil
-            } else {
-                // Streaming mode (default behavior)
-                let assistantMessage = await withCheckedContinuation { (continuation: CheckedContinuation<Message?, Never>) in
-                    Task {
-                        await client.withStreamResponse(
-                            model: configuration.responsesModel,
-                            input: history,
-                            instructions: systemMessage,
-                            tools: allResponsesTools,
-                            temperature: configuration.temperature,
-                            maxOutputTokens: configuration.maxTokens,
-                            reasoningEffort: configuration.reasoningEffort
-                        ) { stream in
-                            var assistantText = ""
-                            var finalMessageId: String? = nil
-                            
-                            do {
-                                for try await event in stream {
-                                    switch event {
-                                    case .responseDelta(let delta):
-                                        // Accumulate text
-                                        assistantText += delta
-                                        
-                                    case .responseDone(let response):
-                                        // Extract final text if available
-                                        if let firstText = response.firstText, !firstText.isEmpty {
-                                            assistantText = firstText
-                                        }
-                                        
-                                    case .responseFailed(let error):
-                                        await eventEmitter.emit(.error(error: EchoError.invalidResponse(error)))
-                                        
-                                    case .raw(let type, let data):
-                                        // Handle raw events that might contain text
-                                        if type == "response.output_text.done" {
-                                            // Extract text from the raw event
-                                            if let text = data["text"]?.value as? String {
-                                                assistantText = text
-                                            }
-                                        } else if type == "response.output_item.done" {
-                                            // Alternative format for text completion
-                                            if let item = data["item"]?.value as? [String: Any],
-                                               let contentArray = item["content"] as? [[String: Any]] {
-                                                for content in contentArray {
-                                                    if content["type"] as? String == "text",
-                                                       let text = content["text"] as? String {
-                                                        assistantText = text
-                                                        break
-                                                    }
-                                                }
-                                            }
-                                        } else if type == "response.incomplete" {
-                                            // Handle incomplete responses
-                                            await eventEmitter.emit(.error(error: EchoError.invalidResponse(
-                                                "Response was incomplete - the model returned only reasoning without a text response. Try rephrasing your question."
-                                            )))
-                                        }
-                                        
-                                    default:
-                                        // Handle other events
-                                        break
-                                    }
-                                }
-                                
-                                // After stream completes, enqueue the message
-                                if !assistantText.isEmpty {
-                                    finalMessageId = await messageQueue.enqueue(
-                                        role: .assistant,
-                                        text: assistantText,
-                                        audioData: nil,
-                                        transcriptStatus: .notApplicable
-                                    )
-                                }
-                            } catch {
-                                await eventEmitter.emit(.error(error: error))
-                            }
-                            
-                            // Resume with the final message
-                            if let messageId = finalMessageId {
-                                let message = await messageQueue.getMessage(byId: messageId)
-                                continuation.resume(returning: message)
-                            } else {
-                                continuation.resume(returning: nil)
-                            }
-                        }
-                    }
-                }
-                
-                return assistantMessage
-            }
+        if responseFormat != nil {
+            print("[RealtimeAPI] ⚠️ Warning: responseFormat is not supported by Realtime API and will be ignored")
         }
-    }
-    
-    // MARK: - Stream Processing
-
-    /// Processes the response stream from Responses API
-    nonisolated private static func processResponseStream(
-        client: ResponsesClient,
-        model: ResponsesModel,
-        history: [Message],
-        instructions: String?,
-        tools: [ResponsesTool],
-        emitter: EventEmitter,
-        messageQueue: MessageQueue,
-        temperature: Double,
-        maxOutputTokens: Int?,
-        responseFormat: ResponseFormat? = nil
-    ) async {
-        await client.withStreamResponse(
-            model: model,
-            input: history,
-            instructions: instructions,
-            tools: tools,
-            temperature: temperature,
-            maxOutputTokens: maxOutputTokens
-        ) { stream in
-            var assistantText = ""
-            do {
-                for try await event in stream {
-                    switch event {
-                    case .responseDelta(let delta):
-                        assistantText += delta
-                    case .responseDone(_):
-                        if !assistantText.isEmpty {
-                            await messageQueue.enqueue(
-                                role: .assistant,
-                                text: assistantText,
-                                audioData: nil,
-                                transcriptStatus: .notApplicable
-                            )
-                        }
-                    default:
-                        break
-                    }
-                }
-            } catch {
-                await emitter.emit(.error(error: error))
-            }
-        }
+        return try await send(text)
     }
 
     // MARK: - Mode Switching
@@ -748,92 +428,21 @@ public class Conversation: RealtimeClientDelegate {
         await eventEmitter.emit(.modeSwitched(to: mode))
     }
 
-    /// Switches to a different mode.
+    /// Switches between audio and text mode within the same session.
+    ///
+    /// This method toggles the output modality of the Realtime API:
+    /// - **Audio mode**: Responses include audio + transcript, microphone active
+    /// - **Text mode**: Responses are text-only, no audio generation
+    ///
+    /// **Key benefit**: No history resend. Context is preserved within the same
+    /// session, making this extremely cost-effective compared to switching APIs.
     ///
     /// - Parameter newMode: The mode to switch to
     /// - Throws: EchoError if switching fails
-    ///
-    /// - Note: This method now uses `setAudioEnabled()` internally for Realtime-only mode.
-    ///   Context is preserved within the same session without resending history.
     public func switchMode(to newMode: EchoMode) async throws {
         guard mode != newMode else { return }
-        
-        // Use the new audio toggle approach if we have a realtime client
-        if realtimeClient != nil {
-            print("[RealtimeAPI] 🔄 Switching modality within session (no history resend)")
-            try await setAudioEnabled(newMode == .audio)
-            return
-        }
-
-        // Legacy path for when starting in text mode with Responses API
-        print("[Echo] ⚠️ Using legacy API switch path (will resend history)")
-        await eventEmitter.emit(.modeSwitching(from: mode, to: newMode))
-
-        switch (mode, newMode) {
-        case (.audio, .text):
-            try await transitionAudioToText()
-        case (.text, .audio):
-            try await transitionTextToAudio()
-        default:
-            break
-        }
-
-        mode = newMode
-        await eventEmitter.emit(.modeSwitched(to: newMode))
-    }
-
-    private func transitionAudioToText() async throws {
-        // For legacy Responses API path: Disconnect Realtime WebSocket
-        print("[Echo] ⚠️ Legacy mode switch: RealtimeAPI → ResponsesAPI")
-        print("[RealtimeAPI] 🔌 Disconnecting WebRTC/WebSocket session...")
-        await realtimeClient?.disconnect()
-        realtimeClient = nil
-        turnManager = nil
-
-        // Initialize Responses client
-        print("[ResponsesAPI/HTTP] 🔌 Initializing HTTP client...")
-        try await initializeTextMode()
-        print("[ResponsesAPI/HTTP] ✅ Ready for text mode")
-    }
-
-    private func transitionTextToAudio() async throws {
-        // Get conversation history
-        let messages = await messageQueue.getOrderedMessages()
-        print("[Echo] ⚠️ Legacy mode switch: ResponsesAPI → RealtimeAPI")
-        print("[Echo] 📤 Will resend \(messages.count) messages to new session (this is expensive!)")
-
-        // Initialize Realtime WebSocket FIRST (before destroying responses client)
-        print("[RealtimeAPI] 🔌 Creating new WebRTC/WebSocket session...")
-        try await initializeAudioMode()
-
-        // Clean up Responses client only AFTER successful audio initialization
-        responsesClient = nil
-
-        // Inject history into Realtime API
-        guard let client = realtimeClient else {
-            throw EchoError.clientNotInitialized("Realtime client not initialized after initialization")
-        }
-        
-        // Send each message as a conversation item
-        print("[RealtimeAPI] 📤 Resending \(messages.count) history messages...")
-        for (index, message) in messages.enumerated() {
-            let contentType = message.role == .user ? "input_text" : "output_text"
-            let itemDict: [String: Any] = [
-                "type": "message",
-                "role": message.role.rawValue,
-                "content": [
-                    [
-                        "type": contentType,
-                        "text": message.text
-                    ]
-                ]
-            ]
-
-            let sendableItem = try SendableJSON.from(dictionary: itemDict)
-            try await client.send(.conversationItemCreate(item: sendableItem, previousItemId: nil))
-            print("[RealtimeAPI] 📤 Sent history message \(index + 1)/\(messages.count)")
-        }
-        print("[RealtimeAPI] ✅ History resend complete")
+        print("[RealtimeAPI] 🔄 Switching mode to \(newMode) (context preserved)")
+        try await setAudioEnabled(newMode == .audio)
     }
 
     // MARK: - Audio Control
@@ -1015,7 +624,6 @@ public class Conversation: RealtimeClientDelegate {
         
         await realtimeClient?.disconnect()
         realtimeClient = nil
-        responsesClient = nil
         turnManager = nil
     }
 }

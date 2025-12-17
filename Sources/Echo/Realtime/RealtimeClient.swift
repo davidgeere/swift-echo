@@ -942,10 +942,14 @@ public actor RealtimeClient: TurnManagerDelegate {
         let toolsJSON: [SendableJSON]? = allToolsJSON.isEmpty ? nil : allToolsJSON
 
         // Temperature and speed rounding is handled in RealtimeSession.toRealtimeFormat()
+        // Set initial output modality from configuration
+        currentOutputModality = configuration.outputModality
+        
         let session = RealtimeSession(
             model: configuration.model,
             voice: configuration.voice,
             speed: configuration.speed,
+            outputModality: configuration.outputModality,
             inputAudioFormat: configuration.audioFormat,
             outputAudioFormat: configuration.audioFormat,
             inputAudioTranscription: configuration.enableTranscription ? InputAudioTranscription() : nil,
@@ -1253,6 +1257,14 @@ public struct RealtimeClientConfiguration: Sendable {
 
     /// Audio format for input and output
     public let audioFormat: AudioFormat
+    
+    /// Initial output modality for the session.
+    ///
+    /// - `.audio`: Model responds with audio + transcript (default)
+    /// - `.text`: Model responds with text only (no audio generation)
+    ///
+    /// This can be changed during the session using `updateOutputModality()`.
+    public let outputModality: OutputModality
 
     /// Turn detection configuration
     public let turnDetection: TurnDetection?
@@ -1293,6 +1305,7 @@ public struct RealtimeClientConfiguration: Sendable {
     ///   - voice: Voice type
     ///   - speed: Voice playback speed (default: 1.0, valid range: 0.25 to 1.5)
     ///   - audioFormat: Audio format
+    ///   - outputModality: Initial output modality (.audio or .text)
     ///   - turnDetection: Turn detection config
     ///   - instructions: System instructions
     ///   - enableTranscription: Enable transcription
@@ -1309,6 +1322,7 @@ public struct RealtimeClientConfiguration: Sendable {
         voice: VoiceType = .alloy,
         speed: Double = 1.0,
         audioFormat: AudioFormat = .pcm16,
+        outputModality: OutputModality = .audio,
         turnDetection: TurnDetection? = .default,
         instructions: String? = nil,
         enableTranscription: Bool = true,
@@ -1325,6 +1339,7 @@ public struct RealtimeClientConfiguration: Sendable {
         self.voice = voice
         self.speed = speed
         self.audioFormat = audioFormat
+        self.outputModality = outputModality
         self.turnDetection = turnDetection
         self.instructions = instructions
         self.enableTranscription = enableTranscription
@@ -1338,14 +1353,27 @@ public struct RealtimeClientConfiguration: Sendable {
         self.transportType = transportType
     }
 
-    /// Default configuration using gpt-realtime model
+    /// Default configuration using gpt-realtime model with audio output
     public static let `default` = RealtimeClientConfiguration(
         model: .gptRealtime,
         voice: .alloy,
         audioFormat: .pcm16,
+        outputModality: .audio,
         turnDetection: .default,
         enableTranscription: true,
         startAudioAutomatically: true
+    )
+    
+    /// Text-only configuration using gpt-realtime model
+    /// Use this when you want text responses only (no audio generation)
+    public static let textOnly = RealtimeClientConfiguration(
+        model: .gptRealtime,
+        voice: .alloy,
+        audioFormat: .pcm16,
+        outputModality: .text,
+        turnDetection: nil,
+        enableTranscription: false,
+        startAudioAutomatically: false
     )
 
     /// Low-latency configuration using gpt-realtime-mini

@@ -52,55 +52,53 @@ extension Echo {
         }
         
         // MARK: - Structured Output
+        //
+        // Note: Structured outputs require the Responses API which is not included
+        // in the Realtime-only branch. These methods will throw an error.
+        // For structured outputs, use the full Echo library with Responses API support.
         
         /// Generate structured output from a prompt
+        ///
+        /// - Warning: Structured outputs are not supported in Realtime-only mode.
+        ///   The Realtime API does not support structured outputs/JSON schemas.
+        ///
         /// - Parameters:
         ///   - type: The Codable type to generate
         ///   - prompt: The prompt to send to the model
         ///   - model: The model to use (defaults to configuration default)
         ///   - instructions: Optional system instructions
         /// - Returns: Decoded instance of the specified type
-        /// - Throws: EchoError if generation or decoding fails
+        /// - Throws: EchoError.unsupportedFeature in Realtime-only mode
+        @available(*, unavailable, message: "Structured outputs require Responses API. Use full Echo library for this feature.")
         public func structured<T: Codable & Sendable>(
             _ type: T.Type,
             from prompt: String,
             model: ResponsesModel? = nil,
             instructions: String? = nil
         ) async throws -> T {
-            let targetModel = model ?? echo.configuration.responsesModel
-            let client = ResponsesClient(apiKey: echo.apiKey, eventEmitter: echo.eventEmitter)
-            
-            return try await client.generateStructured(
-                prompt: prompt,
-                schema: type,
-                model: targetModel,
-                instructions: instructions
-            )
+            fatalError("Structured outputs not available in Realtime-only mode")
         }
         
         /// Generate structured JSON from a prompt with a custom schema
+        ///
+        /// - Warning: Structured outputs are not supported in Realtime-only mode.
+        ///   The Realtime API does not support structured outputs/JSON schemas.
+        ///
         /// - Parameters:
         ///   - jsonSchema: Custom JSON schema definition
         ///   - prompt: The prompt to send to the model
         ///   - model: The model to use (defaults to configuration default)
         ///   - instructions: Optional system instructions
         /// - Returns: Raw JSON string
-        /// - Throws: EchoError if generation fails
+        /// - Throws: EchoError.unsupportedFeature in Realtime-only mode
+        @available(*, unavailable, message: "Structured outputs require Responses API. Use full Echo library for this feature.")
         public func structuredJSON(
             schema jsonSchema: JSONSchema,
             from prompt: String,
             model: ResponsesModel? = nil,
             instructions: String? = nil
         ) async throws -> String {
-            let targetModel = model ?? echo.configuration.responsesModel
-            let client = ResponsesClient(apiKey: echo.apiKey, eventEmitter: echo.eventEmitter)
-            
-            return try await client.generateStructuredJSON(
-                prompt: prompt,
-                jsonSchema: jsonSchema,
-                model: targetModel,
-                instructions: instructions
-            )
+            fatalError("Structured outputs not available in Realtime-only mode")
         }
     }
     
@@ -228,46 +226,49 @@ extension Conversation {
             self.conversation = conversation
         }
         
-        /// Send a text message and return response (in text mode)
+        /// Send a text message via the Realtime API
+        ///
+        /// The response will come through events, not as a return value.
+        /// In audio mode, the response will be spoken. In text mode, it will be text-only.
+        ///
         /// - Parameter text: The message text
-        /// - Returns: The assistant's response message (in text mode only)
+        /// - Returns: nil (responses come through events)
         /// - Throws: EchoError if sending fails
+        @discardableResult
         public func message(_ text: String) async throws -> Message? {
             return try await conversation.send(text)
         }
         
+        // MARK: - Structured Outputs (Not Available)
+        //
+        // Note: The following methods are unavailable in Realtime-only mode
+        // because the Realtime API does not support structured outputs.
+        
         /// Send a message with response format
-        /// - Parameters:
-        ///   - text: The message text
-        ///   - expecting: Response format for structured outputs
-        /// - Returns: The assistant's response message (for non-streaming use cases)
-        /// - Throws: EchoError if sending fails
+        /// - Warning: Not available in Realtime-only mode.
+        @available(*, unavailable, message: "Structured outputs require Responses API. Use full Echo library for this feature.")
         public func message(
             _ text: String,
             expecting format: ResponseFormat
         ) async throws -> Message? {
-            return try await conversation.sendMessage(text, responseFormat: format)
+            fatalError("Structured outputs not available in Realtime-only mode")
         }
         
         /// Send a message expecting JSON output
-        /// - Parameter text: The message text
-        /// - Returns: The assistant's response message with JSON
-        /// - Throws: EchoError if sending fails
+        /// - Warning: Not available in Realtime-only mode.
+        @available(*, unavailable, message: "Structured outputs require Responses API. Use full Echo library for this feature.")
         public func json(_ text: String) async throws -> Message? {
-            return try await conversation.sendMessage(text, responseFormat: .jsonObject)
+            fatalError("Structured outputs not available in Realtime-only mode")
         }
         
         /// Send a message expecting structured output
-        /// - Parameters:
-        ///   - text: The message text
-        ///   - schema: The JSON schema to enforce
-        /// - Returns: The assistant's response message
-        /// - Throws: EchoError if sending fails
+        /// - Warning: Not available in Realtime-only mode.
+        @available(*, unavailable, message: "Structured outputs require Responses API. Use full Echo library for this feature.")
         public func structured(
             _ text: String,
             schema: JSONSchema
         ) async throws -> Message? {
-            return try await conversation.sendMessage(text, responseFormat: .jsonSchema(schema))
+            fatalError("Structured outputs not available in Realtime-only mode")
         }
     }
     

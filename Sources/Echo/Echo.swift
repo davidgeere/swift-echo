@@ -282,47 +282,36 @@ extension Echo {
     }
 }
 
-// MARK: - Structured Outputs Extension (Legacy API)
+// MARK: - Structured Outputs Extension (Not Available in Realtime-Only Mode)
 
 extension Echo {
-    // MARK: - Structured Outputs (Backwards Compatibility)
+    // MARK: - Structured Outputs
+    //
+    // Note: Structured outputs require the Responses API which is not included
+    // in the Realtime-only branch. These methods are unavailable.
 
     /// Generates a structured output using JSON schema
-    /// - Parameters:
-    ///   - prompt: The prompt to send to the model
-    ///   - schema: The Codable type to generate
-    ///   - model: The Responses model to use (defaults to configuration default)
-    ///   - instructions: Optional system instructions
-    /// - Returns: Decoded instance of the specified type
-    /// - Throws: EchoError if generation or decoding fails
-    /// - Note: Consider using `echo.generate.structured(_:from:)` for better discoverability
-    @available(*, deprecated, message: "Use echo.generate.structured(_:from:) instead")
+    /// - Warning: Not available in Realtime-only mode. Use full Echo library.
+    @available(*, unavailable, message: "Structured outputs require Responses API. Use full Echo library for this feature.")
     public func generateStructured<T: Codable & Sendable>(
         prompt: String,
         schema: T.Type,
         model: ResponsesModel? = nil,
         instructions: String? = nil
     ) async throws -> T {
-        return try await generate.structured(schema, from: prompt, model: model, instructions: instructions)
+        fatalError("Structured outputs not available in Realtime-only mode")
     }
 
     /// Generates structured JSON output using a custom schema
-    /// - Parameters:
-    ///   - prompt: The prompt to send to the model
-    ///   - jsonSchema: Custom JSON schema definition
-    ///   - model: The Responses model to use (defaults to configuration default)
-    ///   - instructions: Optional system instructions
-    /// - Returns: Raw JSON string
-    /// - Throws: EchoError if generation fails
-    /// - Note: Consider using `echo.generate.structuredJSON(schema:from:)` for better discoverability
-    @available(*, deprecated, message: "Use echo.generate.structuredJSON(schema:from:) instead")
+    /// - Warning: Not available in Realtime-only mode. Use full Echo library.
+    @available(*, unavailable, message: "Structured outputs require Responses API. Use full Echo library for this feature.")
     public func generateStructuredJSON(
         prompt: String,
         jsonSchema: JSONSchema,
         model: ResponsesModel? = nil,
         instructions: String? = nil
     ) async throws -> String {
-        return try await generate.structuredJSON(schema: jsonSchema, from: prompt, model: model, instructions: instructions)
+        fatalError("Structured outputs not available in Realtime-only mode")
     }
 
     // MARK: - Internal Testing Support
