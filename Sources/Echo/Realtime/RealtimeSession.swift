@@ -22,6 +22,15 @@ public struct RealtimeSession: Sendable {
     /// - Default: 1.0 (normal speed)
     public let speed: Double?
 
+    /// Output modality configuration.
+    ///
+    /// - `.audio`: Model responds with audio plus a transcript (default)
+    /// - `.text`: Model responds with text only
+    ///
+    /// Use `.text` when you want the model to respond without generating audio,
+    /// such as when the user is typing instead of speaking.
+    public let outputModality: OutputModality
+
     /// Audio input format
     public let inputAudioFormat: AudioFormat
 
@@ -63,6 +72,7 @@ public struct RealtimeSession: Sendable {
     ///   - model: Realtime model to use
     ///   - voice: Voice for text-to-speech
     ///   - speed: Voice playback speed (default: 1.0, valid range: 0.25 to 1.5)
+    ///   - outputModality: Output modality (`.audio` for voice+transcript, `.text` for text only)
     ///   - inputAudioFormat: Input audio format
     ///   - outputAudioFormat: Output audio format
     ///   - inputAudioTranscription: Transcription config
@@ -79,6 +89,7 @@ public struct RealtimeSession: Sendable {
         model: RealtimeModel,
         voice: VoiceType = .alloy,
         speed: Double? = 1.0,
+        outputModality: OutputModality = .audio,
         inputAudioFormat: AudioFormat = .pcm16,
         outputAudioFormat: AudioFormat = .pcm16,
         inputAudioTranscription: InputAudioTranscription? = InputAudioTranscription(),
@@ -95,6 +106,7 @@ public struct RealtimeSession: Sendable {
         self.model = model.rawValue
         self.voice = voice
         self.speed = speed
+        self.outputModality = outputModality
         self.inputAudioFormat = inputAudioFormat
         self.outputAudioFormat = outputAudioFormat
         self.inputAudioTranscription = inputAudioTranscription
@@ -113,7 +125,7 @@ public struct RealtimeSession: Sendable {
     /// Converts to the format expected by the Realtime API
     public func toRealtimeFormat() -> [String: Any] {
         var config: [String: Any] = [
-            "modalities": ["text", "audio"],
+            "modalities": outputModality.apiValue,
             "voice": voice.rawValue,
             "input_audio_format": inputAudioFormat.rawValue,
             "output_audio_format": outputAudioFormat.rawValue

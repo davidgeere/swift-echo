@@ -259,7 +259,7 @@ public actor MockWebSocketClient {
                 "id": "mock_session",
                 "object": "realtime.session",
                 "model": "gpt-4o-realtime",
-                "modalities": ["text", "audio"]
+                "modalities": ["audio"]
             }
         }
         """

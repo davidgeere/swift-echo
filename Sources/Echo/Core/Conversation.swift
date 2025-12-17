@@ -681,13 +681,86 @@ public class Conversation: RealtimeClientDelegate {
     }
 
     // MARK: - Mode Switching
+    
+    /// Whether audio is currently enabled for this conversation.
+    ///
+    /// When audio is enabled, the microphone captures user speech and responses
+    /// are played through the speaker. When disabled, the user types messages
+    /// and responses are text-only (no audio generation on the server).
+    ///
+    /// This property reflects the current output modality of the Realtime session.
+    public var isAudioEnabled: Bool {
+        get async {
+            guard let client = realtimeClient else { return false }
+            return await client.currentOutputModality == .audio
+        }
+    }
+    
+    /// Enables or disables audio for this conversation.
+    ///
+    /// This method provides a cost-effective way to switch between voice and text
+    /// interaction within the same session, without losing conversation context.
+    ///
+    /// **When enabling audio (`true`):**
+    /// - Server output modality changes to audio (responses include audio + transcript)
+    /// - Audio capture (microphone) starts
+    /// - Audio playback (speaker) starts
+    ///
+    /// **When disabling audio (`false`):**
+    /// - Server output modality changes to text (responses are text-only, no audio generation)
+    /// - Audio capture stops
+    /// - Audio playback stops
+    ///
+    /// - Parameter enabled: Whether to enable audio
+    /// - Throws: EchoError if the operation fails
+    ///
+    /// - Note: This keeps the same Realtime API session, preserving all conversation
+    ///   context without resending history. Much more cost-effective than switching APIs.
+    public func setAudioEnabled(_ enabled: Bool) async throws {
+        guard let client = realtimeClient else {
+            throw EchoError.clientNotInitialized("Realtime client not initialized")
+        }
+        
+        let currentModality = await client.currentOutputModality
+        let targetModality: OutputModality = enabled ? .audio : .text
+        
+        // Early exit if already in the desired state
+        guard currentModality != targetModality else { return }
+        
+        await eventEmitter.emit(.modeSwitching(from: enabled ? .text : .audio, to: enabled ? .audio : .text))
+        
+        // Update server-side output modality
+        try await client.updateOutputModality(targetModality)
+        
+        // Start or stop audio engine based on the new state
+        if enabled {
+            try await client.startAudio()
+            mode = .audio
+        } else {
+            await client.stopAudio()
+            mode = .text
+        }
+        
+        await eventEmitter.emit(.modeSwitched(to: mode))
+    }
 
-    /// Switches to a different mode
+    /// Switches to a different mode.
+    ///
     /// - Parameter newMode: The mode to switch to
     /// - Throws: EchoError if switching fails
+    ///
+    /// - Note: This method now uses `setAudioEnabled()` internally for Realtime-only mode.
+    ///   Context is preserved within the same session without resending history.
     public func switchMode(to newMode: EchoMode) async throws {
         guard mode != newMode else { return }
+        
+        // Use the new audio toggle approach if we have a realtime client
+        if realtimeClient != nil {
+            try await setAudioEnabled(newMode == .audio)
+            return
+        }
 
+        // Legacy path for when starting in text mode with Responses API
         await eventEmitter.emit(.modeSwitching(from: mode, to: newMode))
 
         switch (mode, newMode) {
@@ -704,7 +777,7 @@ public class Conversation: RealtimeClientDelegate {
     }
 
     private func transitionAudioToText() async throws {
-        // Disconnect Realtime WebSocket
+        // For legacy Responses API path: Disconnect Realtime WebSocket
         await realtimeClient?.disconnect()
         realtimeClient = nil
         turnManager = nil

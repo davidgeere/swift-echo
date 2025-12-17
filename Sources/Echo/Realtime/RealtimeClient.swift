@@ -742,6 +742,37 @@ public actor RealtimeClient: TurnManagerDelegate {
         try await send(.sessionUpdate(session: .object(sessionConfig)))
     }
 
+    /// Update the output modality of the session.
+    ///
+    /// This allows switching between audio and text responses within the same session,
+    /// preserving all conversation context without needing to resend history.
+    ///
+    /// - Parameter modality: The output modality to switch to
+    /// - Throws: RealtimeError if send fails
+    ///
+    /// **Usage:**
+    /// - Call with `.audio` when user wants voice responses
+    /// - Call with `.text` when user wants text-only responses (no audio generation)
+    ///
+    /// **Important:** When switching to `.text`, the server will only generate text responses.
+    /// When switching to `.audio`, the server will generate both audio and transcript.
+    /// Context is preserved across modality switches within the same session.
+    public func updateOutputModality(_ modality: OutputModality) async throws {
+        let sessionConfig: [String: SendableJSON] = [
+            "modalities": .array(modality.apiValue.map { .string($0) })
+        ]
+        
+        try await send(.sessionUpdate(session: .object(sessionConfig)))
+        
+        // Update local tracking
+        currentOutputModality = modality
+        
+        print("[RealtimeClient] Output modality updated to: \(modality)")
+    }
+    
+    /// The current output modality of the session.
+    public private(set) var currentOutputModality: OutputModality = .audio
+
     // MARK: - Echo Protection
 
     /// Enables echo protection gating on audio capture
