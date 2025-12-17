@@ -30,6 +30,7 @@ public actor WebRTCSessionManager {
     public struct SessionConfiguration: Sendable {
         public let type: String
         public let model: String
+        public let modalities: [String]  // Output modalities: ["audio"] or ["text"]
         public let voice: String?
         public let speed: Double?
         public let instructions: String?
@@ -41,6 +42,7 @@ public actor WebRTCSessionManager {
         
         public init(
             model: String,
+            modalities: [String] = ["audio"],  // Default to audio for backwards compatibility
             voice: String? = nil,
             speed: Double? = nil,
             instructions: String? = nil,
@@ -52,6 +54,7 @@ public actor WebRTCSessionManager {
         ) {
             self.type = "realtime"
             self.model = model
+            self.modalities = modalities
             self.voice = voice
             self.speed = speed
             self.instructions = instructions
@@ -124,8 +127,11 @@ public actor WebRTCSessionManager {
         func toJSON() -> [String: Any] {
             var session: [String: Any] = [
                 "type": type,
-                "model": model
+                "model": model,
+                "modalities": modalities
             ]
+            
+            print("[DEBUG-MODALITIES] 🎯 Session modalities: \(modalities)")
             
             // Audio configuration (GA API format)
             var audio: [String: Any] = [:]

@@ -128,8 +128,14 @@ public actor WebRTCTransport: RealtimeTransportProtocol {
             // Step 3: Build session configuration
             // SOLVE-4: Include transcription configuration for WebRTC
             // Pass all settings through to ephemeral key request
+            
+            // Extract modalities from config (default to ["audio"] for backwards compatibility)
+            let modalities = sessionConfig?["modalities"] as? [String] ?? ["audio"]
+            print("[RealtimeAPI/WebRTC] 🎯 Extracted modalities from config: \(modalities)")
+            
             let config = WebRTCSessionManager.SessionConfiguration(
                 model: model,
+                modalities: modalities,
                 voice: sessionConfig?["voice"] as? String,
                 speed: (sessionConfig?["speed"] as? NSNumber)?.doubleValue,
                 instructions: sessionConfig?["instructions"] as? String,

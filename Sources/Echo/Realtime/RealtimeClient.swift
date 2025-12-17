@@ -260,6 +260,11 @@ public actor RealtimeClient: TurnManagerDelegate {
     private func buildSessionConfigJSON() -> String? {
         var config: [String: Any] = [:]
         
+        // CRITICAL: Include modalities for WebRTC sessions
+        // This determines whether the server responds with audio or text-only
+        config["modalities"] = configuration.outputModality.apiValue
+        print("[RealtimeAPI] 🎯 Building session config with modalities: \(configuration.outputModality.apiValue)")
+        
         if let instructions = configuration.instructions {
             config["instructions"] = instructions
         }
