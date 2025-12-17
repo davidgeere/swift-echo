@@ -153,6 +153,7 @@ public class Conversation: RealtimeClientDelegate {
         let realtimeConfig = RealtimeClientConfiguration(
             model: configuration.realtimeModel,
             voice: configuration.voice,
+            speed: configuration.speed, 
             audioFormat: configuration.audioFormat,
             turnDetection: configuration.turnDetection,
             instructions: systemMessage,
