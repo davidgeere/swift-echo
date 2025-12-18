@@ -386,6 +386,9 @@ public class Conversation: RealtimeClientDelegate {
                                         assistantText = firstText
                                     }
                                     
+                                    // DEBUG: Log usage status
+                                    print("[Conversation] 📊 Text mode responseDone - usage: \(String(describing: response.usage))")
+                                    
                                     // Emit usage event if available
                                     if let responsesUsage = response.usage {
                                         let usage = Usage(
@@ -601,6 +604,9 @@ public class Conversation: RealtimeClientDelegate {
                                             assistantText = firstText
                                         }
                                         
+                                        // DEBUG: Log usage status
+                                        print("[Conversation] 📊 Text mode responseDone (with conversationId) - usage: \(String(describing: response.usage))")
+                                        
                                         // Emit usage event if available
                                         if let responsesUsage = response.usage {
                                             let usage = Usage(
@@ -736,6 +742,9 @@ public class Conversation: RealtimeClientDelegate {
                                 transcriptStatus: .notApplicable
                             )
                         }
+                        
+                        // DEBUG: Log usage status
+                        print("[Conversation] 📊 Text mode responseDone (processResponseStream) - usage: \(String(describing: response.usage))")
                         
                         // Emit usage event if available
                         if let responsesUsage = response.usage {

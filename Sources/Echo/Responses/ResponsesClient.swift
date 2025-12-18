@@ -243,6 +243,21 @@ public actor ResponsesClient {
                                     }
                                 }
                                 
+                                // DEBUG: Always log event type for usage troubleshooting
+                                if let jsonDict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                                   let eventType = jsonDict["type"] as? String {
+                                    if eventType == "response.completed" || eventType.contains("usage") {
+                                        print("[ResponsesClient] 📊 SSE event type: \(eventType)")
+                                        if let usage = jsonDict["usage"] {
+                                            print("[ResponsesClient] 📊 SSE usage field: \(usage)")
+                                        }
+                                        if let response = jsonDict["response"] as? [String: Any],
+                                           let nestedUsage = response["usage"] {
+                                            print("[ResponsesClient] 📊 SSE response.usage field: \(nestedUsage)")
+                                        }
+                                    }
+                                }
+                                
                                 let event = try JSONDecoder().decode(StreamEvent.self, from: data)
 
                                 // Log event if logging enabled
@@ -272,6 +287,8 @@ public actor ResponsesClient {
                                     // Don't emit messageFinalized here - MessageQueue handles it
                                     // This prevents duplicate messages in the UI
                                     log("Response completed: \(response.id)")
+                                    // DEBUG: Always log usage for troubleshooting
+                                    print("[ResponsesClient] 📊 response.completed - usage: \(String(describing: response.usage))")
 
                                 case .raw(let type, _):
                                     // Silently ignore raw events (they're informational only)
