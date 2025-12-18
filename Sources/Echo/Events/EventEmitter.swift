@@ -1,6 +1,7 @@
 // EventEmitter.swift
 // Echo - Event Infrastructure
 // Pure sink event emitter - events are observations, not commands
+// Supports multiple subscribers via broadcast pattern
 
 import Foundation
 
@@ -26,18 +27,21 @@ import Foundation
 ///     }
 /// }
 /// ```
+///
+/// ## Multi-Subscriber Support
+/// Each call to `events` creates a NEW AsyncStream that receives ALL events.
+/// This allows multiple consumers to subscribe independently without competing
+/// for events. Each subscriber receives every event that's emitted after they
+/// subscribe.
 public actor EventEmitter {
     // MARK: - Properties
     
     /// Logger for debugging event emissions (optional)
     private let enableLogging: Bool
 
-    /// Continuation for the events stream
-    private var eventContinuation: AsyncStream<EchoEvent>.Continuation?
-
-    /// Stream of all emitted events
-    /// Use this to observe all events: `for await event in emitter.events { ... }`
-    public nonisolated let events: AsyncStream<EchoEvent>
+    /// All active subscriber continuations
+    /// Each subscriber gets their own continuation so events are broadcast to all
+    private var subscribers: [UUID: AsyncStream<EchoEvent>.Continuation] = [:]
 
     // MARK: - Initialization
 
@@ -45,32 +49,65 @@ public actor EventEmitter {
     /// - Parameter enableLogging: Whether to log event emissions for debugging
     public init(enableLogging: Bool = false) {
         self.enableLogging = enableLogging
-
-        // Create the events stream
-        var continuation: AsyncStream<EchoEvent>.Continuation?
-        self.events = AsyncStream { cont in
-            continuation = cont
-        }
-        self.eventContinuation = continuation
     }
 
-    deinit {
-        eventContinuation?.finish()
+    // MARK: - Subscription
+
+    /// Stream of all emitted events
+    /// 
+    /// Each call to this property creates a NEW independent stream.
+    /// Multiple consumers can subscribe simultaneously - each receives all events.
+    /// 
+    /// Use this to observe all events: `for await event in emitter.events { ... }`
+    public nonisolated var events: AsyncStream<EchoEvent> {
+        AsyncStream { continuation in
+            let id = UUID()
+            
+            // Register this continuation
+            Task {
+                await self.addSubscriber(id: id, continuation: continuation)
+            }
+            
+            // Remove when cancelled or finished
+            continuation.onTermination = { @Sendable _ in
+                Task {
+                    await self.removeSubscriber(id: id)
+                }
+            }
+        }
+    }
+
+    /// Adds a new subscriber
+    private func addSubscriber(id: UUID, continuation: AsyncStream<EchoEvent>.Continuation) {
+        subscribers[id] = continuation
+        if enableLogging {
+            log("Added subscriber \(id), total: \(subscribers.count)")
+        }
+    }
+
+    /// Removes a subscriber
+    private func removeSubscriber(id: UUID) {
+        subscribers.removeValue(forKey: id)
+        if enableLogging {
+            log("Removed subscriber \(id), total: \(subscribers.count)")
+        }
     }
 
     // MARK: - Event Emission
 
     /// Emits an event to all stream subscribers
-    /// This is a fire-and-forget operation - the event is yielded to the stream
+    /// This is a fire-and-forget operation - the event is yielded to all streams
     /// and the method returns immediately.
     /// - Parameter event: The event to emit
     public func emit(_ event: EchoEvent) async {
         if enableLogging {
-            log("Emitting event: \(event.type.rawValue)")
+            log("Emitting event: \(event.type.rawValue) to \(subscribers.count) subscribers")
         }
 
-        // Yield event to stream subscribers
-        eventContinuation?.yield(event)
+        // Yield event to ALL subscribers
+        for (_, continuation) in subscribers {
+            continuation.yield(event)
+        }
     }
 
     /// Emits an event to all stream subscribers without waiting
