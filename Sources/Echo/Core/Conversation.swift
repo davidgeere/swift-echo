@@ -406,6 +406,24 @@ public class Conversation: RealtimeClientDelegate {
                                 case .responseFailed(let error):
                                     await eventEmitter.emit(.error(error: EchoError.invalidResponse(error)))
                                     
+                                case .usageUpdate(let inputTokens, let outputTokens):
+                                    // Handle streaming usage update event
+                                    let usage = Usage(
+                                        promptTokens: inputTokens,
+                                        completionTokens: outputTokens,
+                                        totalTokens: inputTokens + outputTokens,
+                                        audioInputTokens: 0,
+                                        audioOutputTokens: 0,
+                                        cachedTokens: 0
+                                    )
+                                    // Get model from session config or use default
+                                    let model = await responsesClient.sessionConfig?.model ?? "gpt-5-nano"
+                                    await eventEmitter.emit(.usageReported(
+                                        usage: usage,
+                                        model: model,
+                                        mode: .text
+                                    ))
+                                    
                                 case .raw(let type, let data):
                                     // Handle raw events that might contain text
                                     if type == "response.output_text.done" {
@@ -605,6 +623,24 @@ public class Conversation: RealtimeClientDelegate {
                                     case .responseFailed(let error):
                                         await eventEmitter.emit(.error(error: EchoError.invalidResponse(error)))
                                         
+                                    case .usageUpdate(let inputTokens, let outputTokens):
+                                        // Handle streaming usage update event
+                                        let usage = Usage(
+                                            promptTokens: inputTokens,
+                                            completionTokens: outputTokens,
+                                            totalTokens: inputTokens + outputTokens,
+                                            audioInputTokens: 0,
+                                            audioOutputTokens: 0,
+                                            cachedTokens: 0
+                                        )
+                                        // Get model from session config or use default
+                                        let model = await responsesClient.sessionConfig?.model ?? "gpt-5-nano"
+                                        await eventEmitter.emit(.usageReported(
+                                            usage: usage,
+                                            model: model,
+                                            mode: .text
+                                        ))
+                                        
                                     case .raw(let type, let data):
                                         // Handle raw events that might contain text
                                         if type == "response.output_text.done" {
@@ -721,6 +757,21 @@ public class Conversation: RealtimeClientDelegate {
                                 mode: .text
                             ))
                         }
+                    case .usageUpdate(let inputTokens, let outputTokens):
+                        // Handle streaming usage update event
+                        let usage = Usage(
+                            promptTokens: inputTokens,
+                            completionTokens: outputTokens,
+                            totalTokens: inputTokens + outputTokens,
+                            audioInputTokens: 0,
+                            audioOutputTokens: 0,
+                            cachedTokens: 0
+                        )
+                        await emitter.emit(.usageReported(
+                            usage: usage,
+                            model: model.rawValue,
+                            mode: .text
+                        ))
                     default:
                         break
                     }
