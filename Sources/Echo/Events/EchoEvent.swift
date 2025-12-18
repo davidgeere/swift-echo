@@ -147,6 +147,15 @@ public enum EchoEvent: Sendable {
     ///   - model: The model used
     case embeddingsGenerated(count: Int, dimensions: Int, model: String)
     
+    // MARK: - Usage Events
+    
+    /// Usage information reported after a response completes
+    /// - Parameters:
+    ///   - usage: The usage details including token counts
+    ///   - model: The model that was used
+    ///   - mode: The conversation mode (audio or text)
+    case usageReported(usage: Usage, model: String, mode: EchoMode)
+    
     // MARK: - Error Events
 
     /// An error occurred during operation
@@ -216,6 +225,8 @@ public enum EchoEvent: Sendable {
             return .embeddingGenerated
         case .embeddingsGenerated:
             return .embeddingsGenerated
+        case .usageReported:
+            return .usageReported
         case .error:
             return .error
         }

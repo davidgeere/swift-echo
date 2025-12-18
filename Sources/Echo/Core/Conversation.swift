@@ -386,6 +386,23 @@ public class Conversation: RealtimeClientDelegate {
                                         assistantText = firstText
                                     }
                                     
+                                    // Emit usage event if available
+                                    if let responsesUsage = response.usage {
+                                        let usage = Usage(
+                                            promptTokens: responsesUsage.inputTokens,
+                                            completionTokens: responsesUsage.outputTokens,
+                                            totalTokens: responsesUsage.totalTokens,
+                                            audioInputTokens: 0,
+                                            audioOutputTokens: 0,
+                                            cachedTokens: responsesUsage.cachedTokens ?? 0
+                                        )
+                                        await eventEmitter.emit(.usageReported(
+                                            usage: usage,
+                                            model: response.model,
+                                            mode: .text
+                                        ))
+                                    }
+                                    
                                 case .responseFailed(let error):
                                     await eventEmitter.emit(.error(error: EchoError.invalidResponse(error)))
                                     
@@ -568,6 +585,23 @@ public class Conversation: RealtimeClientDelegate {
                                             assistantText = firstText
                                         }
                                         
+                                        // Emit usage event if available
+                                        if let responsesUsage = response.usage {
+                                            let usage = Usage(
+                                                promptTokens: responsesUsage.inputTokens,
+                                                completionTokens: responsesUsage.outputTokens,
+                                                totalTokens: responsesUsage.totalTokens,
+                                                audioInputTokens: 0,
+                                                audioOutputTokens: 0,
+                                                cachedTokens: responsesUsage.cachedTokens ?? 0
+                                            )
+                                            await eventEmitter.emit(.usageReported(
+                                                usage: usage,
+                                                model: response.model,
+                                                mode: .text
+                                            ))
+                                        }
+                                        
                                     case .responseFailed(let error):
                                         await eventEmitter.emit(.error(error: EchoError.invalidResponse(error)))
                                         
@@ -661,7 +695,7 @@ public class Conversation: RealtimeClientDelegate {
                     switch event {
                     case .responseDelta(let delta):
                         assistantText += delta
-                    case .responseDone(_):
+                    case .responseDone(let response):
                         if !assistantText.isEmpty {
                             await messageQueue.enqueue(
                                 role: .assistant,
@@ -669,6 +703,23 @@ public class Conversation: RealtimeClientDelegate {
                                 audioData: nil,
                                 transcriptStatus: .notApplicable
                             )
+                        }
+                        
+                        // Emit usage event if available
+                        if let responsesUsage = response.usage {
+                            let usage = Usage(
+                                promptTokens: responsesUsage.inputTokens,
+                                completionTokens: responsesUsage.outputTokens,
+                                totalTokens: responsesUsage.totalTokens,
+                                audioInputTokens: 0,
+                                audioOutputTokens: 0,
+                                cachedTokens: responsesUsage.cachedTokens ?? 0
+                            )
+                            await emitter.emit(.usageReported(
+                                usage: usage,
+                                model: response.model,
+                                mode: .text
+                            ))
                         }
                     default:
                         break

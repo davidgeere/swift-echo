@@ -111,6 +111,11 @@ public enum EventType: String, Sendable, CaseIterable {
     /// Batch embeddings generated
     case embeddingsGenerated
     
+    // MARK: - Usage Events
+    
+    /// Usage information reported after a response completes
+    case usageReported
+    
     // MARK: - Error Events
 
     /// An error occurred during operation

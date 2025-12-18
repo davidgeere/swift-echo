@@ -1091,7 +1091,7 @@ public actor RealtimeClient: TurnManagerDelegate {
             // Also emit event for external observers
             await eventEmitter.emit(.assistantResponseCreated(itemId: item.id))
 
-        case .responseDone:
+        case .responseDone(let response):
             // Mark assistant as no longer speaking
             isAssistantSpeaking = false
 
@@ -1119,6 +1119,23 @@ public actor RealtimeClient: TurnManagerDelegate {
                 // Clear for next response
                 currentAssistantItemId = nil
                 currentAssistantText = ""
+            }
+            
+            // Emit usage event if available
+            if let realtimeUsage = response.usage {
+                let usage = Usage(
+                    promptTokens: realtimeUsage.inputTokens,
+                    completionTokens: realtimeUsage.outputTokens,
+                    totalTokens: realtimeUsage.totalTokens,
+                    audioInputTokens: realtimeUsage.audioInputTokens,
+                    audioOutputTokens: realtimeUsage.audioOutputTokens,
+                    cachedTokens: realtimeUsage.cachedTokens
+                )
+                await eventEmitter.emit(.usageReported(
+                    usage: usage,
+                    model: configuration.model.rawValue,
+                    mode: .audio
+                ))
             }
 
         // Function calls
