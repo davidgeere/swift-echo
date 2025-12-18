@@ -391,6 +391,7 @@ public class Conversation: RealtimeClientDelegate {
                                     
                                     // Emit usage event if available
                                     if let responsesUsage = response.usage {
+                                        print("[Conversation] 📊 Text mode - EMITTING usageReported event with model: \(response.model)")
                                         let usage = Usage(
                                             promptTokens: responsesUsage.inputTokens,
                                             completionTokens: responsesUsage.outputTokens,
@@ -404,6 +405,9 @@ public class Conversation: RealtimeClientDelegate {
                                             model: response.model,
                                             mode: .text
                                         ))
+                                        print("[Conversation] 📊 Text mode - usageReported event EMITTED successfully")
+                                    } else {
+                                        print("[Conversation] ⚠️ Text mode - NO usage data to emit")
                                     }
                                     
                                 case .responseFailed(let error):
@@ -609,6 +613,7 @@ public class Conversation: RealtimeClientDelegate {
                                         
                                         // Emit usage event if available
                                         if let responsesUsage = response.usage {
+                                            print("[Conversation] 📊 Text mode (conversationId) - EMITTING usageReported event with model: \(response.model)")
                                             let usage = Usage(
                                                 promptTokens: responsesUsage.inputTokens,
                                                 completionTokens: responsesUsage.outputTokens,
@@ -622,6 +627,9 @@ public class Conversation: RealtimeClientDelegate {
                                                 model: response.model,
                                                 mode: .text
                                             ))
+                                            print("[Conversation] 📊 Text mode (conversationId) - usageReported event EMITTED successfully")
+                                        } else {
+                                            print("[Conversation] ⚠️ Text mode (conversationId) - NO usage data to emit")
                                         }
                                         
                                     case .responseFailed(let error):
@@ -748,6 +756,7 @@ public class Conversation: RealtimeClientDelegate {
                         
                         // Emit usage event if available
                         if let responsesUsage = response.usage {
+                            print("[Conversation] 📊 Text mode (processResponseStream) - EMITTING usageReported event with model: \(response.model)")
                             let usage = Usage(
                                 promptTokens: responsesUsage.inputTokens,
                                 completionTokens: responsesUsage.outputTokens,
@@ -761,6 +770,9 @@ public class Conversation: RealtimeClientDelegate {
                                 model: response.model,
                                 mode: .text
                             ))
+                            print("[Conversation] 📊 Text mode (processResponseStream) - usageReported event EMITTED successfully")
+                        } else {
+                            print("[Conversation] ⚠️ Text mode (processResponseStream) - NO usage data to emit")
                         }
                     case .usageUpdate(let inputTokens, let outputTokens):
                         // Handle streaming usage update event
