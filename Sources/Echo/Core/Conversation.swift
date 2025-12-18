@@ -416,11 +416,9 @@ public class Conversation: RealtimeClientDelegate {
                                         audioOutputTokens: 0,
                                         cachedTokens: 0
                                     )
-                                    // Get model from session config or use default
-                                    let model = await responsesClient.sessionConfig?.model ?? "gpt-5-nano"
                                     await eventEmitter.emit(.usageReported(
                                         usage: usage,
-                                        model: model,
+                                        model: configuration.responsesModel.rawValue,
                                         mode: .text
                                     ))
                                     
@@ -633,11 +631,9 @@ public class Conversation: RealtimeClientDelegate {
                                             audioOutputTokens: 0,
                                             cachedTokens: 0
                                         )
-                                        // Get model from session config or use default
-                                        let model = await responsesClient.sessionConfig?.model ?? "gpt-5-nano"
                                         await eventEmitter.emit(.usageReported(
                                             usage: usage,
-                                            model: model,
+                                            model: configuration.responsesModel.rawValue,
                                             mode: .text
                                         ))
                                         
