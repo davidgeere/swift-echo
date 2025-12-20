@@ -11,12 +11,13 @@ public struct ResponsesRequest: Encodable, Sendable {
     /// The model to use (must be gpt-5, gpt-5-mini, or gpt-5-nano)
     public let model: String
 
-    /// Input - can be a string or array of messages
+    /// Input - can be a string, array of messages, or array of input items (messages + tool outputs)
     public let input: InputContent
 
     public enum InputContent: Encodable, Sendable {
         case string(String)
         case messages([InputMessage])
+        case items([InputItem])
 
         public func encode(to encoder: Encoder) throws {
             var container = encoder.singleValueContainer()
@@ -25,6 +26,8 @@ public struct ResponsesRequest: Encodable, Sendable {
                 try container.encode(str)
             case .messages(let msgs):
                 try container.encode(msgs)
+            case .items(let items):
+                try container.encode(items)
             }
         }
     }

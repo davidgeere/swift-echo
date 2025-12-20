@@ -335,6 +335,8 @@ public class Conversation: RealtimeClientDelegate {
 
         case .text:
             // In text mode, send to Responses API and await response
+            // This includes a tool execution loop - if the model requests tools,
+            // we execute them and make a new request with the results
             guard let client = responsesClient else {
                 throw EchoError.clientNotInitialized("Responses client not initialized")
             }
@@ -347,9 +349,6 @@ public class Conversation: RealtimeClientDelegate {
                 transcriptStatus: .notApplicable
             )
 
-            // Get conversation history
-            let history = await messageQueue.getOrderedMessages()
-
             // Send to Responses API with streaming
             let responsesModel = configuration.responsesModel
 
@@ -358,135 +357,210 @@ public class Conversation: RealtimeClientDelegate {
             allResponsesTools.append(contentsOf: tools.map { $0.toResponsesTool() })
             allResponsesTools.append(contentsOf: mcpServers.map { $0.toResponsesTool() })
 
-            // Wait for stream completion using continuation
-            let assistantMessage = await withCheckedContinuation { (continuation: CheckedContinuation<Message?, Never>) in
-                Task {
-                    await client.withStreamResponse(
-                        model: responsesModel,
-                        input: history,
-                        instructions: systemMessage,
-                        tools: allResponsesTools,
-                        temperature: configuration.temperature,
-                        maxOutputTokens: configuration.maxTokens,
-                        reasoningEffort: configuration.reasoningEffort
-                    ) { stream in
-                        var assistantText = ""
-                        var finalMessageId: String? = nil
-                        
-                        do {
-                            for try await event in stream {
-                                switch event {
-                                case .responseDelta(let delta):
-                                    // Accumulate text
-                                    assistantText += delta
-                                    
-                                case .responseDone(let response):
-                                    // Extract final text if available
-                                    if let firstText = response.firstText, !firstText.isEmpty {
-                                        assistantText = firstText
-                                    }
-                                    
-                                    // DEBUG: Log usage status
-                                    print("[Conversation] 📊 Text mode responseDone - usage: \(String(describing: response.usage))")
-                                    
-                                    // Emit usage event if available
-                                    if let responsesUsage = response.usage {
-                                        print("[Conversation] 📊 Text mode - EMITTING usageReported event with model: \(response.model)")
+            // Tool execution loop - continue until we get a text response
+            let maxToolIterations = 10 // Prevent infinite loops
+            var iteration = 0
+            
+            // Track tool results for the current request cycle
+            // These are added to the input for follow-up requests but NOT stored in the message queue
+            var pendingToolResults: [InputItem] = []
+            
+            while iteration < maxToolIterations {
+                iteration += 1
+                
+                // Get conversation history from message queue
+                let history = await messageQueue.getOrderedMessages()
+                
+                // Build input items: convert messages to InputItems + add pending tool results
+                var inputItems: [InputItem] = history.map { InputItem.from(message: $0) }
+                inputItems.append(contentsOf: pendingToolResults)
+                
+                // Wait for stream completion using continuation
+                let result = await withCheckedContinuation { (continuation: CheckedContinuation<TextModeStreamResult, Never>) in
+                    Task {
+                        await client.withStreamResponse(
+                            model: responsesModel,
+                            inputItems: inputItems,
+                            instructions: systemMessage,
+                            tools: allResponsesTools,
+                            temperature: configuration.temperature,
+                            maxOutputTokens: configuration.maxTokens,
+                            reasoningEffort: configuration.reasoningEffort
+                        ) { stream in
+                            var assistantText = ""
+                            var toolCalls: [(id: String, name: String, arguments: String)] = []
+                            
+                            do {
+                                for try await event in stream {
+                                    switch event {
+                                    case .responseDelta(let delta):
+                                        // Accumulate text
+                                        assistantText += delta
+                                        
+                                    case .toolCallDone(let id, let name, let arguments):
+                                        // Collect tool calls for execution after stream completes
+                                        toolCalls.append((id: id, name: name, arguments: arguments))
+                                        print("[Conversation] 🔧 Tool call received: \(name) (id: \(id))")
+                                        
+                                        // Emit tool call requested event for observers
+                                        let argumentsData = arguments.data(using: .utf8) ?? Data()
+                                        let parsedArgs = (try? SendableJSON.from(data: argumentsData)) ?? .null
+                                        let toolCall = ToolCall(id: id, name: name, arguments: parsedArgs)
+                                        await eventEmitter.emit(.toolCallRequested(toolCall: toolCall))
+                                        
+                                    case .responseDone(let response):
+                                        // Extract final text if available
+                                        if let firstText = response.firstText, !firstText.isEmpty {
+                                            assistantText = firstText
+                                        }
+                                        
+                                        // DEBUG: Log usage status
+                                        print("[Conversation] 📊 Text mode responseDone - usage: \(String(describing: response.usage))")
+                                        
+                                        // Emit usage event if available
+                                        if let responsesUsage = response.usage {
+                                            print("[Conversation] 📊 Text mode - EMITTING usageReported event with model: \(response.model)")
+                                            let usage = Usage(
+                                                promptTokens: responsesUsage.inputTokens,
+                                                completionTokens: responsesUsage.outputTokens,
+                                                totalTokens: responsesUsage.totalTokens,
+                                                audioInputTokens: 0,
+                                                audioOutputTokens: 0,
+                                                cachedTokens: responsesUsage.cachedTokens ?? 0
+                                            )
+                                            await eventEmitter.emit(.usageReported(
+                                                usage: usage,
+                                                model: response.model,
+                                                mode: .text
+                                            ))
+                                            print("[Conversation] 📊 Text mode - usageReported event EMITTED successfully")
+                                        } else {
+                                            print("[Conversation] ⚠️ Text mode - NO usage data to emit")
+                                        }
+                                        
+                                    case .responseFailed(let error):
+                                        await eventEmitter.emit(.error(error: EchoError.invalidResponse(error)))
+                                        
+                                    case .usageUpdate(let inputTokens, let outputTokens):
+                                        // Handle streaming usage update event
                                         let usage = Usage(
-                                            promptTokens: responsesUsage.inputTokens,
-                                            completionTokens: responsesUsage.outputTokens,
-                                            totalTokens: responsesUsage.totalTokens,
+                                            promptTokens: inputTokens,
+                                            completionTokens: outputTokens,
+                                            totalTokens: inputTokens + outputTokens,
                                             audioInputTokens: 0,
                                             audioOutputTokens: 0,
-                                            cachedTokens: responsesUsage.cachedTokens ?? 0
+                                            cachedTokens: 0
                                         )
                                         await eventEmitter.emit(.usageReported(
                                             usage: usage,
-                                            model: response.model,
+                                            model: configuration.responsesModel.rawValue,
                                             mode: .text
                                         ))
-                                        print("[Conversation] 📊 Text mode - usageReported event EMITTED successfully")
-                                    } else {
-                                        print("[Conversation] ⚠️ Text mode - NO usage data to emit")
-                                    }
-                                    
-                                case .responseFailed(let error):
-                                    await eventEmitter.emit(.error(error: EchoError.invalidResponse(error)))
-                                    
-                                case .usageUpdate(let inputTokens, let outputTokens):
-                                    // Handle streaming usage update event
-                                    let usage = Usage(
-                                        promptTokens: inputTokens,
-                                        completionTokens: outputTokens,
-                                        totalTokens: inputTokens + outputTokens,
-                                        audioInputTokens: 0,
-                                        audioOutputTokens: 0,
-                                        cachedTokens: 0
-                                    )
-                                    await eventEmitter.emit(.usageReported(
-                                        usage: usage,
-                                        model: configuration.responsesModel.rawValue,
-                                        mode: .text
-                                    ))
-                                    
-                                case .raw(let type, let data):
-                                    // Handle raw events that might contain text
-                                    if type == "response.output_text.done" {
-                                        // Extract text from the raw event
-                                        if let text = data["text"]?.value as? String {
-                                            assistantText = text
-                                        }
-                                    } else if type == "response.output_item.done" {
-                                        // Alternative format for text completion
-                                        if let item = data["item"]?.value as? [String: Any],
-                                           let contentArray = item["content"] as? [[String: Any]] {
-                                            for content in contentArray {
-                                                if content["type"] as? String == "text",
-                                                   let text = content["text"] as? String {
-                                                    assistantText = text
-                                                    break
+                                        
+                                    case .raw(let type, let data):
+                                        // Handle raw events that might contain text
+                                        if type == "response.output_text.done" {
+                                            // Extract text from the raw event
+                                            if let text = data["text"]?.value as? String {
+                                                assistantText = text
+                                            }
+                                        } else if type == "response.output_item.done" {
+                                            // Alternative format for text completion
+                                            if let item = data["item"]?.value as? [String: Any],
+                                               let contentArray = item["content"] as? [[String: Any]] {
+                                                for content in contentArray {
+                                                    if content["type"] as? String == "text",
+                                                       let text = content["text"] as? String {
+                                                        assistantText = text
+                                                        break
+                                                    }
                                                 }
                                             }
+                                        } else if type == "response.incomplete" {
+                                            // Handle incomplete responses (e.g., reasoning-only responses)
+                                            await eventEmitter.emit(.error(error: EchoError.invalidResponse(
+                                                "Response was incomplete - the model returned only reasoning without a text response. Try rephrasing your question or adjusting reasoning effort."
+                                            )))
                                         }
-                                    } else if type == "response.incomplete" {
-                                        // Handle incomplete responses (e.g., reasoning-only responses)
-                                        await eventEmitter.emit(.error(error: EchoError.invalidResponse(
-                                            "Response was incomplete - the model returned only reasoning without a text response. Try rephrasing your question or adjusting reasoning effort."
-                                        )))
+                                        
+                                    default:
+                                        // Handle other events (including toolCallDelta)
+                                        break
                                     }
-                                    
-                                default:
-                                    // Handle other events
-                                    break
                                 }
-                            }
-                            
-                            // After stream completes, enqueue the message
-                            if !assistantText.isEmpty {
-                                finalMessageId = await messageQueue.enqueue(
-                                    role: .assistant,
+                                
+                                // Return the result
+                                continuation.resume(returning: TextModeStreamResult(
                                     text: assistantText,
-                                    audioData: nil,
-                                    transcriptStatus: .notApplicable
-                                )
+                                    toolCalls: toolCalls
+                                ))
+                            } catch {
+                                await eventEmitter.emit(.error(error: error))
+                                continuation.resume(returning: TextModeStreamResult(text: "", toolCalls: []))
                             }
-                        } catch {
-                            await eventEmitter.emit(.error(error: error))
-                        }
-                        
-                        // Resume with the final message
-                        if let messageId = finalMessageId {
-                            let message = await messageQueue.getMessage(byId: messageId)
-                            continuation.resume(returning: message)
-                        } else {
-                            continuation.resume(returning: nil)
                         }
                     }
                 }
+                
+                // Check if we have tool calls to execute
+                if !result.toolCalls.isEmpty {
+                    print("[Conversation] 🔧 Executing \(result.toolCalls.count) tool call(s)...")
+                    
+                    // Execute each tool call and collect results
+                    for call in result.toolCalls {
+                        // Parse arguments
+                        let argumentsData = call.arguments.data(using: .utf8) ?? Data()
+                        let parsedArgs = (try? SendableJSON.from(data: argumentsData)) ?? .null
+                        let toolCall = ToolCall(id: call.id, name: call.name, arguments: parsedArgs)
+                        
+                        // Execute the tool
+                        let toolResult = await toolExecutor.execute(toolCall: toolCall)
+                        
+                        print("[Conversation] 🔧 Tool '\(call.name)' result: \(toolResult.isSuccess ? "success" : "error")")
+                        
+                        // Add tool result to pending results for the next request
+                        // Tool results are NOT stored in the message queue - they're ephemeral
+                        pendingToolResults.append(.functionCallOutput(callId: call.id, output: toolResult.output))
+                        
+                        // Emit tool result submitted event
+                        await eventEmitter.emit(.toolResultSubmitted(
+                            toolCallId: call.id,
+                            result: toolResult.output
+                        ))
+                    }
+                    
+                    // Continue the loop - make another request with tool results
+                    print("[Conversation] 🔄 Making follow-up request with tool results (iteration \(iteration))...")
+                    continue
+                }
+                
+                // No tool calls - we have a text response
+                if !result.text.isEmpty {
+                    let finalMessageId = await messageQueue.enqueue(
+                        role: .assistant,
+                        text: result.text,
+                        audioData: nil,
+                        transcriptStatus: .notApplicable
+                    )
+                    return await messageQueue.getMessage(byId: finalMessageId)
+                }
+                
+                // Empty response with no tool calls - break the loop
+                break
             }
             
-            return assistantMessage
+            if iteration >= maxToolIterations {
+                print("[Conversation] ⚠️ Tool execution loop reached maximum iterations (\(maxToolIterations))")
+            }
+            
+            return nil
         }
+    }
+    
+    /// Result from text mode streaming
+    private struct TextModeStreamResult {
+        let text: String
+        let toolCalls: [(id: String, name: String, arguments: String)]
     }
 
     /// Sends a message with optional response format (for structured outputs)

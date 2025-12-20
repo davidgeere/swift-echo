@@ -159,11 +159,42 @@ public actor ResponsesClient {
         )
         try await handler(stream)
     }
-
-    /// Creates a streaming response (SSE)
+    
+    /// Processes a streaming response with InputItems (supports tool results)
+    /// - Parameters:
+    ///   - model: The model to use
+    ///   - inputItems: Input items (messages and/or function call outputs)
+    ///   - instructions: System instructions (optional)
+    ///   - tools: Available tools for function calling (optional)
+    ///   - temperature: Sampling temperature (default: 0.8)
+    ///   - maxOutputTokens: Maximum tokens to generate (optional)
+    ///   - handler: Closure that processes the stream (isolated to this actor)
+    public func withStreamResponse(
+        model: ResponsesModel,
+        inputItems: [InputItem],
+        instructions: String? = nil,
+        tools: [ResponsesTool] = [],
+        temperature: Double = 0.8,
+        maxOutputTokens: Int? = nil,
+        reasoningEffort: ReasoningEffort = .none,
+        handler: @Sendable (AsyncThrowingStream<StreamEvent, Error>) async throws -> Void
+    ) async rethrows {
+        let stream = streamResponseWithItems(
+            model: model,
+            inputItems: inputItems,
+            instructions: instructions,
+            tools: tools,
+            temperature: temperature,
+            maxOutputTokens: maxOutputTokens,
+            reasoningEffort: reasoningEffort
+        )
+        try await handler(stream)
+    }
+    
+    /// Creates a streaming response with InputItems (supports tool results)
     /// - Parameters:
     ///   - model: The model to use (MUST be gpt-5, gpt-5-mini, or gpt-5-nano)
-    ///   - input: Input messages
+    ///   - inputItems: Input items (messages and/or function call outputs)
     ///   - instructions: System instructions (optional)
     ///   - tools: Available tools for function calling (optional)
     ///   - temperature: Sampling temperature (default: 0.8)
@@ -171,9 +202,9 @@ public actor ResponsesClient {
     /// - Returns: AsyncThrowingStream of StreamEvent
     /// - Throws: ResponsesError if model is unsupported
     @preconcurrency
-    public func streamResponse(
+    public func streamResponseWithItems(
         model: ResponsesModel,
-        input: [Message],
+        inputItems: [InputItem],
         instructions: String? = nil,
         tools: [ResponsesTool] = [],
         temperature: Double = 0.8,
@@ -186,32 +217,26 @@ public actor ResponsesClient {
                     // CRITICAL: Validate model
                     try validateModel(model)
 
-                    log("Streaming response with model: \(model.rawValue)")
+                    log("Streaming response with items, model: \(model.rawValue)")
 
                     // Reset SSE parser
                     await sseParser.reset()
 
-                    // Convert messages to API format
-                    let apiMessages: [InputMessage] = input.map { message in
-                        InputMessage(role: message.role.rawValue, content: message.text)
-                    }
-
-                    // Build request with proper temperature
-                    // Only include temperature if the model supports it
+                    // Build request with InputItems
                     let request = ResponsesRequest(
                         model: model.rawValue,
-                        input: .messages(apiMessages),
+                        input: .items(inputItems),
                         instructions: instructions,
                         tools: tools.isEmpty ? nil : tools,
-                        toolChoice: tools.isEmpty ? nil : "auto",  // Let model decide when to use tools
+                        toolChoice: tools.isEmpty ? nil : "auto",
                         temperature: model.supportsTemperature ? temperature : nil,
                         maxOutputTokens: maxOutputTokens,
                         stream: true,
                         reasoningEffort: reasoningEffort == .none ? nil : reasoningEffort.rawValue
                     )
 
-                    // Estimate tokens for rate limiting
-                    let estimatedTokens = estimateTokens(for: input) + (maxOutputTokens ?? 1000)
+                    // Estimate tokens for rate limiting (rough estimate)
+                    let estimatedTokens = inputItems.count * 100 + (maxOutputTokens ?? 1000)
 
                     // Emit connection status
                     await eventEmitter.emit(.connectionStatusChanged(isConnected: true))
@@ -224,6 +249,10 @@ public actor ResponsesClient {
                     )
 
                     var accumulatedText = ""
+                    
+                    // Track function names from output_item.added events
+                    // Key: item_id, Value: function name
+                    var pendingFunctionCalls: [String: String] = [:]
 
                     for try await chunk in stream {
                         // Convert ByteBuffer to String
@@ -275,13 +304,24 @@ public actor ResponsesClient {
                                 case .toolCallDelta(_, let name, _):
                                     log("Tool call delta: \(name)")
 
-                                case .toolCallDone(let id, let name, let argumentsString):
+                                case .toolCallDone(let id, var name, let argumentsString):
+                                    // If name is empty, look it up from pending function calls
+                                    if name.isEmpty, let trackedName = pendingFunctionCalls[id] {
+                                        name = trackedName
+                                        pendingFunctionCalls.removeValue(forKey: id)
+                                        log("Resolved function name from tracked calls: \(name)")
+                                    }
+                                    
                                     // Parse arguments string to SendableJSON
                                     let argumentsData = argumentsString.data(using: .utf8) ?? Data()
                                     let arguments = (try? SendableJSON.from(data: argumentsData)) ?? .null
                                     let toolCall = ToolCall(id: id, name: name, arguments: arguments)
                                     await eventEmitter.emit(.toolCallRequested(toolCall: toolCall))
                                     log("Tool call: \(name)")
+                                    
+                                    // Yield the corrected event with proper name
+                                    continuation.yield(.toolCallDone(id: id, name: name, arguments: argumentsString))
+                                    continue
 
                                 case .responseDone(let response):
                                     // Don't emit messageFinalized here - MessageQueue handles it
@@ -291,7 +331,20 @@ public actor ResponsesClient {
                                     print("[ResponsesClient] 📊 response.completed - usage: \(String(describing: response.usage))")
 
                                 case .raw(let type, _):
-                                    // Silently ignore raw events (they're informational only)
+                                    // Check if this is an output_item.added with function call info
+                                    if type == "response.output_item.added" {
+                                        // Try to extract function call info from the raw JSON
+                                        if let jsonDict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                                           let item = jsonDict["item"] as? [String: Any],
+                                           let itemId = item["id"] as? String,
+                                           let itemType = item["type"] as? String,
+                                           itemType == "function_call",
+                                           let functionName = item["name"] as? String {
+                                            pendingFunctionCalls[itemId] = functionName
+                                            log("Tracked function call: \(functionName) with id: \(itemId)")
+                                        }
+                                    }
+                                    // Silently ignore other raw events (they're informational only)
                                     log("Ignored event: \(type)")
 
                                 default:
@@ -316,13 +369,48 @@ public actor ResponsesClient {
                     // NOTE: Don't emit disconnected here - Responses API is stateless
                     // and ready for next request immediately
 
-                } catch {
+                } catch let error as HTTPError {
                     await eventEmitter.emit(.connectionStatusChanged(isConnected: false))
+                    continuation.finish(throwing: convertHTTPError(error))
+                } catch {
                     await eventEmitter.emit(.error(error: error))
-                    continuation.finish(throwing: error)
+                    continuation.finish(throwing: ResponsesError.networkError(error))
                 }
             }
         }
+    }
+
+    /// Creates a streaming response (SSE)
+    /// - Parameters:
+    ///   - model: The model to use (MUST be gpt-5, gpt-5-mini, or gpt-5-nano)
+    ///   - input: Input messages
+    ///   - instructions: System instructions (optional)
+    ///   - tools: Available tools for function calling (optional)
+    ///   - temperature: Sampling temperature (default: 0.8)
+    ///   - maxOutputTokens: Maximum tokens to generate (optional)
+    /// - Returns: AsyncThrowingStream of StreamEvent
+    /// - Throws: ResponsesError if model is unsupported
+    @preconcurrency
+    public func streamResponse(
+        model: ResponsesModel,
+        input: [Message],
+        instructions: String? = nil,
+        tools: [ResponsesTool] = [],
+        temperature: Double = 0.8,
+        maxOutputTokens: Int? = nil,
+        reasoningEffort: ReasoningEffort = .none
+    ) -> AsyncThrowingStream<StreamEvent, Error> {
+        // Convert Messages to InputItems and delegate to streamResponseWithItems
+        let inputItems = input.map { InputItem.from(message: $0) }
+        return streamResponseWithItems(
+            model: model,
+            inputItems: inputItems,
+            instructions: instructions,
+            tools: tools,
+            temperature: temperature,
+            maxOutputTokens: maxOutputTokens,
+            reasoningEffort: reasoningEffort
+        )
     }
 
     // MARK: - Model Validation
