@@ -208,7 +208,8 @@ public class Conversation: RealtimeClientDelegate {
             if !initialMessages.isEmpty {
                 print("[Conversation] 🔄 Injecting \(initialMessages.count) initial messages into Realtime API...")
                 for message in initialMessages {
-                    let contentType = message.role == .user ? "input_text" : "text"
+                    // OpenAI Realtime API requires "input_text" for user messages and "output_text" for assistant messages
+                    let contentType = message.role == .user ? "input_text" : "output_text"
                     let itemDict: [String: Any] = [
                         "type": "message",
                         "role": message.role.rawValue,
