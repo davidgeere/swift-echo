@@ -97,6 +97,7 @@ public class Conversation: RealtimeClientDelegate {
     ///   - tools: Registered tools for function calling
     ///   - mcpServers: Registered MCP servers
     ///   - toolExecutor: Tool executor for executing tools
+    ///   - initialMessages: Optional array of messages to initialize the conversation with
     ///   - audioCaptureFactory: Optional factory for creating audio capture (for testing)
     ///   - audioPlaybackFactory: Optional factory for creating audio playback (for testing)
     init(
@@ -108,6 +109,7 @@ public class Conversation: RealtimeClientDelegate {
         tools: [Tool] = [],
         mcpServers: [MCPServer] = [],
         toolExecutor: ToolExecutor,
+        initialMessages: [Message] = [],
         audioCaptureFactory: (@Sendable () async -> any AudioCaptureProtocol)? = nil,
         audioPlaybackFactory: (@Sendable () async -> any AudioPlaybackProtocol)? = nil
     ) async throws {
@@ -123,11 +125,24 @@ public class Conversation: RealtimeClientDelegate {
         self.messageQueue = MessageQueue(eventEmitter: eventEmitter)
         self.audioCaptureFactory = audioCaptureFactory
         self.audioPlaybackFactory = audioPlaybackFactory
+        
+        // Pre-populate message queue with initial messages (for continuing previous sessions)
+        if !initialMessages.isEmpty {
+            for message in initialMessages {
+                _ = await messageQueue.enqueue(
+                    role: message.role,
+                    text: message.text,
+                    audioData: nil,
+                    transcriptStatus: .completed
+                )
+            }
+            print("[Conversation] 📚 Loaded \(initialMessages.count) initial messages into conversation context")
+        }
 
         // Initialize the appropriate client based on mode
         switch mode {
         case .audio:
-            try await initializeAudioMode()
+            try await initializeAudioMode(initialMessages: initialMessages)
         case .text:
             try await initializeTextMode()
         }
@@ -135,7 +150,7 @@ public class Conversation: RealtimeClientDelegate {
 
     // MARK: - Mode Initialization
 
-    private func initializeAudioMode() async throws {
+    private func initializeAudioMode(initialMessages: [Message] = []) async throws {
         // Create turn manager with proper mode handling
         let turnMode: TurnManager.TurnMode
         switch configuration.turnDetection {
@@ -188,6 +203,28 @@ public class Conversation: RealtimeClientDelegate {
             try await client.connect()
             // Only assign if connection succeeds
             realtimeClient = client
+            
+            // Inject initial messages into the Realtime API for conversation context
+            if !initialMessages.isEmpty {
+                print("[Conversation] 🔄 Injecting \(initialMessages.count) initial messages into Realtime API...")
+                for message in initialMessages {
+                    let contentType = message.role == .user ? "input_text" : "text"
+                    let itemDict: [String: Any] = [
+                        "type": "message",
+                        "role": message.role.rawValue,
+                        "content": [
+                            [
+                                "type": contentType,
+                                "text": message.text
+                            ]
+                        ]
+                    ]
+                    
+                    let sendableItem = try SendableJSON.from(dictionary: itemDict)
+                    try await client.send(.conversationItemCreate(item: sendableItem, previousItemId: nil))
+                }
+                print("[Conversation] ✅ Successfully injected \(initialMessages.count) messages into Realtime API context")
+            }
             
             // Start observing audio levels from events
             startAudioLevelObservation()

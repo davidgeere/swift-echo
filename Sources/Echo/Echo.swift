@@ -84,11 +84,13 @@ public class Echo {
     /// - Parameters:
     ///   - mode: The initial mode (audio or text)
     ///   - systemMessage: Optional system instructions for the model (overrides config default if provided)
+    ///   - initialMessages: Optional array of messages to initialize the conversation with (for continuing previous sessions)
     /// - Returns: A Conversation instance for managing the conversation
     /// - Throws: EchoError if conversation cannot be started
     public func startConversation(
         mode: EchoMode,
-        systemMessage: String? = nil
+        systemMessage: String? = nil,
+        initialMessages: [Message] = []
     ) async throws -> Conversation {
         // Use provided systemMessage or fall back to config's default
         let finalSystemMessage = systemMessage ?? configuration.systemMessage
@@ -101,7 +103,8 @@ public class Echo {
             eventEmitter: eventEmitter,
             tools: tools,
             mcpServers: mcpServers,
-            toolExecutor: toolExecutor
+            toolExecutor: toolExecutor,
+            initialMessages: initialMessages
         )
     }
 
@@ -110,12 +113,14 @@ public class Echo {
     ///   - mode: The initial mode (audio or text)
     ///   - turnMode: Turn detection mode (overrides configuration default)
     ///   - systemMessage: Optional system instructions for the model
+    ///   - initialMessages: Optional array of messages to initialize the conversation with (for continuing previous sessions)
     /// - Returns: A Conversation instance for managing the conversation
     /// - Throws: EchoError if conversation cannot be started
     public func startConversation(
         mode: EchoMode,
         turnMode: TurnDetection,
-        systemMessage: String? = nil
+        systemMessage: String? = nil,
+        initialMessages: [Message] = []
     ) async throws -> Conversation {
         // Use provided systemMessage or fall back to config's default
         let finalSystemMessage = systemMessage ?? configuration.systemMessage
@@ -145,7 +150,8 @@ public class Echo {
             eventEmitter: eventEmitter,
             tools: tools,
             mcpServers: mcpServers,
-            toolExecutor: toolExecutor
+            toolExecutor: toolExecutor,
+            initialMessages: initialMessages
         )
     }
 
@@ -331,6 +337,7 @@ extension Echo {
     /// - Parameters:
     ///   - mode: The initial mode (audio or text)
     ///   - systemMessage: Optional system instructions for the model
+    ///   - initialMessages: Optional array of messages to initialize the conversation with
     ///   - audioCaptureFactory: Factory for creating audio capture
     ///   - audioPlaybackFactory: Factory for creating audio playback
     /// - Returns: A Conversation instance for managing the conversation
@@ -338,6 +345,7 @@ extension Echo {
     internal func startConversation(
         mode: EchoMode,
         systemMessage: String? = nil,
+        initialMessages: [Message] = [],
         audioCaptureFactory: (@Sendable () async -> any AudioCaptureProtocol)?,
         audioPlaybackFactory: (@Sendable () async -> any AudioPlaybackProtocol)?
     ) async throws -> Conversation {
@@ -350,6 +358,7 @@ extension Echo {
             tools: tools,
             mcpServers: mcpServers,
             toolExecutor: toolExecutor,
+            initialMessages: initialMessages,
             audioCaptureFactory: audioCaptureFactory,
             audioPlaybackFactory: audioPlaybackFactory
         )
