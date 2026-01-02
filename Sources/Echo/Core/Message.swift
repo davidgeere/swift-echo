@@ -44,6 +44,10 @@ public struct Message: Sendable, Identifiable, Codable {
     /// Used when a message contains multiple content parts (text + audio, tool calls, etc.).
     public let content: [MessageContent]?
 
+    /// Whether this message was loaded from history (not created during current session).
+    /// Historical messages should not be re-persisted to the database.
+    public let isHistorical: Bool
+
     // MARK: - Initialization
 
     /// Creates a new message with the specified properties.
@@ -56,6 +60,7 @@ public struct Message: Sendable, Identifiable, Codable {
     ///   - timestamp: Timestamp when created (default: now)
     ///   - sequenceNumber: Sequence number for ordering
     ///   - content: Optional rich content array
+    ///   - isHistorical: Whether this message was loaded from history (default: false)
     public init(
         id: String = UUID().uuidString,
         role: MessageRole,
@@ -63,7 +68,8 @@ public struct Message: Sendable, Identifiable, Codable {
         audioData: Data? = nil,
         timestamp: Date = Date(),
         sequenceNumber: Int,
-        content: [MessageContent]? = nil
+        content: [MessageContent]? = nil,
+        isHistorical: Bool = false
     ) {
         self.id = id
         self.role = role
@@ -72,6 +78,7 @@ public struct Message: Sendable, Identifiable, Codable {
         self.timestamp = timestamp
         self.sequenceNumber = sequenceNumber
         self.content = content
+        self.isHistorical = isHistorical
     }
 
     // MARK: - Computed Properties
@@ -104,6 +111,28 @@ public struct Message: Sendable, Identifiable, Codable {
     /// Whether this message is a tool result.
     public var isToolMessage: Bool {
         return role == .tool
+    }
+
+    // MARK: - Historical Flag
+
+    /// Creates a copy of this message with the specified historical flag.
+    ///
+    /// Used when yielding existing messages to new stream subscribers
+    /// to mark them as historical (already persisted to database).
+    ///
+    /// - Parameter historical: Whether the message should be marked as historical
+    /// - Returns: A new Message with the updated isHistorical flag
+    public func withHistorical(_ historical: Bool) -> Message {
+        Message(
+            id: id,
+            role: role,
+            text: text,
+            audioData: audioData,
+            timestamp: timestamp,
+            sequenceNumber: sequenceNumber,
+            content: content,
+            isHistorical: historical
+        )
     }
 
     // MARK: - API Conversion

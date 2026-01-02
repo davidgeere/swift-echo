@@ -37,6 +37,7 @@ public actor MessageQueue {
         var transcriptStatus: TranscriptStatus
         let timestamp: Date
         let sequenceNumber: Int
+        let isHistorical: Bool
     }
 
     /// Status of transcript processing for a message
@@ -64,6 +65,7 @@ public actor MessageQueue {
     ///   - text: Optional text content
     ///   - audioData: Optional audio data
     ///   - transcriptStatus: Status of transcript processing (default: .notApplicable)
+    ///   - isHistorical: Whether this message is historical (already persisted, default: false)
     /// - Returns: The unique identifier for the enqueued message
     @discardableResult
     public func enqueue(
@@ -71,7 +73,8 @@ public actor MessageQueue {
         role: MessageRole,
         text: String? = nil,
         audioData: Data? = nil,
-        transcriptStatus: TranscriptStatus = .notApplicable
+        transcriptStatus: TranscriptStatus = .notApplicable,
+        isHistorical: Bool = false
     ) -> String {
         let messageId = id ?? UUID().uuidString
         let pending = PendingMessage(
@@ -81,7 +84,8 @@ public actor MessageQueue {
             audioData: audioData,
             transcriptStatus: transcriptStatus,
             timestamp: Date(),
-            sequenceNumber: sequenceNumber
+            sequenceNumber: sequenceNumber,
+            isHistorical: isHistorical
         )
         sequenceNumber += 1
         pendingMessages.append(pending)
@@ -170,7 +174,8 @@ public actor MessageQueue {
                 text: first.text ?? "",
                 audioData: first.audioData,
                 timestamp: first.timestamp,
-                sequenceNumber: first.sequenceNumber
+                sequenceNumber: first.sequenceNumber,
+                isHistorical: first.isHistorical
             )
             completedMessages.append(message)
             pendingMessages.removeFirst()
@@ -200,9 +205,11 @@ public actor MessageQueue {
             }
         }
 
-        // Yield all existing completed messages to new subscribers
+        // Yield all existing completed messages to new subscribers (marked as historical)
+        // Historical messages should not be re-persisted to the database by consumers
         for message in completedMessages {
-            continuation.yield(message)
+            let historicalMessage = message.withHistorical(true)
+            continuation.yield(historicalMessage)
         }
     }
 

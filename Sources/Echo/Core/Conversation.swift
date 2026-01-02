@@ -127,16 +127,18 @@ public class Conversation: RealtimeClientDelegate {
         self.audioPlaybackFactory = audioPlaybackFactory
         
         // Pre-populate message queue with initial messages (for continuing previous sessions)
+        // Mark as historical so they won't be re-persisted by stream consumers
         if !initialMessages.isEmpty {
             for message in initialMessages {
                 _ = await messageQueue.enqueue(
                     role: message.role,
                     text: message.text,
                     audioData: nil,
-                    transcriptStatus: .completed
+                    transcriptStatus: .completed,
+                    isHistorical: true
                 )
             }
-            print("[Conversation] 📚 Loaded \(initialMessages.count) initial messages into conversation context")
+            print("[Conversation] 📚 Loaded \(initialMessages.count) initial messages into conversation context (marked as historical)")
         }
 
         // Initialize the appropriate client based on mode

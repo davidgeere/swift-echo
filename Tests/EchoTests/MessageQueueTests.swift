@@ -445,6 +445,133 @@ struct MessageQueueTests {
         #expect(messages[3].role == .tool)
     }
 
+    // MARK: - Historical Message Tests
+
+    @Test("Messages default to isHistorical false")
+    func testMessagesDefaultNotHistorical() async throws {
+        let queue = MessageQueue(eventEmitter: EventEmitter())
+
+        await queue.enqueue(role: .user, text: "New message")
+
+        let messages = await queue.getOrderedMessages()
+        #expect(messages.count == 1)
+        #expect(messages[0].isHistorical == false, "New messages should not be historical")
+    }
+
+    @Test("Messages can be enqueued as historical")
+    func testEnqueueHistoricalMessages() async throws {
+        let queue = MessageQueue(eventEmitter: EventEmitter())
+
+        await queue.enqueue(
+            role: .user,
+            text: "Historical message",
+            isHistorical: true
+        )
+
+        let messages = await queue.getOrderedMessages()
+        #expect(messages.count == 1)
+        #expect(messages[0].isHistorical == true, "Message should be marked as historical")
+    }
+
+    @Test("Yielded messages to new subscribers are marked as historical")
+    func testYieldedMessagesAreHistorical() async throws {
+        let queue = MessageQueue(eventEmitter: EventEmitter())
+
+        // Enqueue a regular (non-historical) message
+        await queue.enqueue(role: .user, text: "First message")
+        await queue.enqueue(role: .assistant, text: "Response")
+
+        // The messages in getOrderedMessages should NOT be historical
+        // (they were created in this session)
+        let orderedMessages = await queue.getOrderedMessages()
+        #expect(orderedMessages[0].isHistorical == false)
+        #expect(orderedMessages[1].isHistorical == false)
+
+        // Create a stream subscription (simulating a new subscriber)
+        let stream = AsyncStream<Message> { continuation in
+            Task {
+                await queue.subscribe(continuation: continuation)
+            }
+        }
+
+        // Collect messages from the stream
+        var streamedMessages: [Message] = []
+        for await message in stream {
+            streamedMessages.append(message)
+            if streamedMessages.count >= 2 {
+                break
+            }
+        }
+
+        // Messages yielded to new subscribers should be marked as historical
+        #expect(streamedMessages.count == 2)
+        #expect(streamedMessages[0].isHistorical == true, "Yielded messages should be historical")
+        #expect(streamedMessages[1].isHistorical == true, "Yielded messages should be historical")
+    }
+
+    @Test("New messages after subscription are not historical")
+    func testNewMessagesAfterSubscriptionNotHistorical() async throws {
+        let queue = MessageQueue(eventEmitter: EventEmitter())
+
+        // Enqueue a message before subscription
+        await queue.enqueue(role: .user, text: "Before subscription")
+
+        // Create a stream subscription
+        var capturedMessages: [Message] = []
+        let stream = AsyncStream<Message> { continuation in
+            Task {
+                await queue.subscribe(continuation: continuation)
+            }
+        }
+
+        // Start collecting in background
+        let collectTask = Task {
+            var messages: [Message] = []
+            for await message in stream {
+                messages.append(message)
+                if messages.count >= 2 {
+                    break
+                }
+            }
+            return messages
+        }
+
+        // Wait a bit for subscription to be set up
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        // Enqueue a new message AFTER subscription
+        await queue.enqueue(role: .assistant, text: "After subscription")
+
+        capturedMessages = await collectTask.value
+
+        #expect(capturedMessages.count == 2)
+        #expect(capturedMessages[0].text == "Before subscription")
+        #expect(capturedMessages[0].isHistorical == true, "Pre-existing message should be historical")
+        #expect(capturedMessages[1].text == "After subscription")
+        #expect(capturedMessages[1].isHistorical == false, "New message should NOT be historical")
+    }
+
+    @Test("Historical flag preserved through transcript updates")
+    func testHistoricalFlagPreservedThroughTranscriptUpdate() async throws {
+        let queue = MessageQueue(eventEmitter: EventEmitter())
+
+        // Enqueue a historical message with pending transcript
+        let messageId = await queue.enqueue(
+            role: .user,
+            audioData: Data([1, 2, 3]),
+            transcriptStatus: .inProgress,
+            isHistorical: true
+        )
+
+        // Update the transcript
+        await queue.updateTranscript(id: messageId, transcript: "Completed transcript")
+
+        let messages = await queue.getOrderedMessages()
+        #expect(messages.count == 1)
+        #expect(messages[0].text == "Completed transcript")
+        #expect(messages[0].isHistorical == true, "Historical flag should be preserved after transcript update")
+    }
+
     // MARK: - Complex Scenario Tests
 
     @Test("Complex conversation flow with mixed message types")
