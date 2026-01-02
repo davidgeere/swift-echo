@@ -35,6 +35,9 @@ public actor AudioPlayback: AudioPlaybackProtocol {
     public let audioLevelStream: AsyncStream<AudioLevels>
     private let audioLevelContinuation: AsyncStream<AudioLevels>.Continuation
 
+    /// Reference to the shared audio session manager
+    private let sessionManager = AudioSessionManager.shared
+
     /// Whether playback is currently active
     public var isActive: Bool {
         return isPlaying && (playerNode?.isPlaying ?? false)
@@ -56,76 +59,21 @@ public actor AudioPlayback: AudioPlaybackProtocol {
     }
     
     /// List of available audio output devices
+    ///
+    /// Delegates to AudioSessionManager for consistent device enumeration.
     public var availableAudioOutputDevices: [AudioOutputDeviceType] {
-        #if os(iOS)
-        let audioSession = AVAudioSession.sharedInstance()
-        var devices: [AudioOutputDeviceType] = []
-        
-        // Built-in devices are always available
-        devices.append(.builtInSpeaker)
-        devices.append(.builtInReceiver)
-        
-        // Check for connected Bluetooth devices
-        let availableInputs = audioSession.availableInputs ?? []
-        let currentRoute = audioSession.currentRoute
-        
-        // Get all unique Bluetooth devices from available inputs and current route
-        var bluetoothDevices: Set<String> = []
-        
-        // Check available inputs for Bluetooth devices
-        for input in availableInputs {
-            if input.portType == .bluetoothHFP || input.portType == .bluetoothA2DP || input.portType == .bluetoothLE {
-                let name = input.portName
-                if !name.isEmpty {
-                    bluetoothDevices.insert(name)
-                }
-            }
+        get async {
+            await sessionManager.availableAudioOutputDevices
         }
-        
-        // Check current route outputs for Bluetooth devices
-        for output in currentRoute.outputs {
-            if output.portType == .bluetoothHFP || output.portType == .bluetoothA2DP || output.portType == .bluetoothLE {
-                let name = output.portName
-                if !name.isEmpty {
-                    bluetoothDevices.insert(name)
-                }
-            }
-        }
-        
-        // Add Bluetooth devices to list
-        for name in bluetoothDevices {
-            devices.append(.bluetooth(name: name))
-        }
-        
-        // Check for wired headphones
-        for output in currentRoute.outputs {
-            if output.portType == .headphones {
-                let name = output.portName
-                devices.append(.wiredHeadphones(name: name.isEmpty ? nil : name))
-                break
-            }
-        }
-        
-        return devices
-        #else
-        return [.builtInSpeaker, .builtInReceiver]
-        #endif
     }
     
     /// Current active audio output device
+    ///
+    /// Delegates to AudioSessionManager which queries actual system state.
     public var currentAudioOutput: AudioOutputDeviceType {
-        #if os(iOS)
-        let audioSession = AVAudioSession.sharedInstance()
-        let currentRoute = audioSession.currentRoute
-        
-        guard let output = currentRoute.outputs.first else {
-            return .builtInSpeaker
+        get async {
+            await sessionManager.currentAudioOutput
         }
-        
-        return AudioOutputDeviceType.from(portType: output.portType, portName: output.portName)
-        #else
-        return .builtInSpeaker
-        #endif
     }
 
     // MARK: - Initialization
@@ -154,19 +102,9 @@ public actor AudioPlayback: AudioPlaybackProtocol {
         guard !isPlaying else { return }
 
         do {
-            // Configure audio session
-            #if os(iOS)
-            let audioSession = AVAudioSession.sharedInstance()
-            // Use playAndRecord category to support both input and output
-            // .voiceChat mode enables acoustic echo cancellation (AEC)
-            // Remove .defaultToSpeaker to use earpiece which has better echo cancellation
-            try audioSession.setCategory(
-                .playAndRecord,
-                mode: .voiceChat,
-                options: [.allowBluetoothHFP, .mixWithOthers]
-            )
-            try audioSession.setActive(true, options: [])
-            #endif
+            // Configure audio session via shared manager
+            // WebSocket transport doesn't default to speaker (uses earpiece for better echo cancellation)
+            try await sessionManager.configureForVoiceChat(defaultToSpeaker: false)
 
             // Create audio engine and player node
             let engine = AVAudioEngine()
@@ -233,7 +171,7 @@ public actor AudioPlayback: AudioPlaybackProtocol {
     }
 
     /// Stops audio playback
-    public func stop() {
+    public func stop() async {
         guard isPlaying else { return }
 
         // Remove tap before stopping
@@ -242,9 +180,8 @@ public actor AudioPlayback: AudioPlaybackProtocol {
         playerNode?.stop()
         audioEngine?.stop()
 
-        #if os(iOS)
-        try? AVAudioSession.sharedInstance().setActive(false)
-        #endif
+        // Deactivate session via shared manager
+        await sessionManager.deactivate()
 
         audioEngine = nil
         playerNode = nil
@@ -267,6 +204,10 @@ public actor AudioPlayback: AudioPlaybackProtocol {
     }
 
     /// Sets the audio output device
+    ///
+    /// Delegates to AudioSessionManager for route changes, but manages
+    /// engine restart internally since AudioPlayback owns the AVAudioEngine.
+    ///
     /// - Parameter device: The audio output device to use
     /// - Throws: RealtimeError if audio playback is not active
     public func setAudioOutput(device: AudioOutputDeviceType) async throws {
@@ -279,39 +220,6 @@ public actor AudioPlayback: AudioPlaybackProtocol {
         }
         
         #if os(iOS)
-        let audioSession = AVAudioSession.sharedInstance()
-        
-        var options: AVAudioSession.CategoryOptions = [.allowBluetoothHFP, .mixWithOthers]
-        var portOverride: AVAudioSession.PortOverride = .none
-        
-        switch device {
-        case .builtInSpeaker:
-            // Force speaker output
-            options.insert(.defaultToSpeaker)
-            portOverride = .speaker
-            
-        case .builtInReceiver:
-            // Force earpiece (remove speaker override)
-            portOverride = .none
-            
-        case .bluetooth, .wiredHeadphones, .systemDefault:
-            // Allow system to route to Bluetooth/wired/earpiece
-            // Remove speaker override to allow default routing
-            portOverride = .none
-            
-        case .smart:
-            // Smart mode: Use Bluetooth if available, otherwise speaker with echo protection
-            let bluetoothConnected = availableAudioOutputDevices.contains { $0.isBluetooth }
-            if bluetoothConnected {
-                // Bluetooth is available, let system route to it
-                portOverride = .none
-            } else {
-                // No Bluetooth, use speaker
-                options.insert(.defaultToSpeaker)
-                portOverride = .speaker
-            }
-        }
-        
         // CRITICAL FIX: Stop engines BEFORE route change to prevent route caching
         let wasEngineRunning = audioEngine?.isRunning ?? false
         let wasPlayerPlaying = playerNode?.isPlaying ?? false
@@ -324,42 +232,14 @@ public actor AudioPlayback: AudioPlaybackProtocol {
             try await Task.sleep(nanoseconds: 20_000_000) // 20ms
         }
         
-        // Step 2: Clear any existing override
-        do {
-            try audioSession.overrideOutputAudioPort(.none)
-        } catch {
-            // If clearing fails, we need to deactivate
-            try audioSession.setActive(false, options: .notifyOthersOnDeactivation)
-        }
+        // Step 2: Delegate route change to AudioSessionManager
+        // This handles verification and emits route change events
+        try await sessionManager.setAudioOutput(device: device)
         
-        // Step 3: Reconfigure the category with the new options
-        try audioSession.setCategory(
-            .playAndRecord,
-            mode: .voiceChat,
-            options: options
-        )
+        // Step 3: Wait for route change to fully propagate
+        try await Task.sleep(nanoseconds: 50_000_000) // 50ms
         
-        // Step 4: Reactivate the session if it was deactivated
-        if !audioSession.isOtherAudioPlaying {
-            try audioSession.setActive(true)
-        }
-        
-        // Step 5: Apply port override AFTER session is active
-        try audioSession.overrideOutputAudioPort(portOverride)
-        
-        // Step 6: Wait for route change to take effect BEFORE restarting engine
-        try await Task.sleep(nanoseconds: 100_000_000) // 100ms - longer delay for route to stabilize
-        
-        // Step 7: Verify route actually changed (especially for speaker)
-        let verifyRoute = audioSession.currentRoute
-        let actualOutput = verifyRoute.outputs.first?.portType ?? .builtInReceiver
-        if device == .builtInSpeaker && actualOutput != .builtInSpeaker {
-            // Try override again
-            try audioSession.overrideOutputAudioPort(.speaker)
-            try await Task.sleep(nanoseconds: 50_000_000) // 50ms
-        }
-        
-        // Step 8: NOW restart engines if they were running before
+        // Step 4: NOW restart engines if they were running before
         if wasEngineRunning {
             if let engine = audioEngine, !engine.isRunning {
                 do {

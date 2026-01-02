@@ -2,7 +2,6 @@
 // Echo - Audio
 // Handles WebRTC audio track management
 
-@preconcurrency import AVFoundation
 import Foundation
 import WebRTC
 
@@ -12,7 +11,7 @@ import WebRTC
 /// rather than base64-encoded events. This handler manages:
 /// - Local audio track (microphone input)
 /// - Remote audio track (model output)
-/// - Audio session configuration
+/// - Audio session configuration (delegated to AudioSessionManager)
 /// - Mute/unmute functionality
 public actor WebRTCAudioHandler {
     // MARK: - Types
@@ -30,8 +29,8 @@ public actor WebRTCAudioHandler {
     private var state: State = .idle
     private var isMuted: Bool = false
     
-    /// The current audio output device
-    public private(set) var currentAudioOutput: AudioOutputDeviceType = .systemDefault
+    /// Reference to the shared audio session manager
+    private let sessionManager = AudioSessionManager.shared
     
     // MARK: - Initialization
     
@@ -42,63 +41,32 @@ public actor WebRTCAudioHandler {
     /// Configures the audio session for WebRTC
     ///
     /// Sets up the AVAudioSession with appropriate category, mode, and options
-    /// for real-time voice communication.
+    /// for real-time voice communication. Delegates to AudioSessionManager.
     ///
     /// - Throws: Error if audio session configuration fails
     public func configureAudioSession() async throws {
-        #if os(iOS)
-        let session = AVAudioSession.sharedInstance()
-        
         do {
-            // Configure for voice chat with echo cancellation
-            try session.setCategory(
-                .playAndRecord,
-                mode: .voiceChat,
-                options: [
-                    .defaultToSpeaker,
-                    .allowBluetooth,
-                    .allowBluetoothA2DP,
-                    .mixWithOthers
-                ]
-            )
+            // Delegate to shared manager - WebRTC defaults to speaker
+            try await sessionManager.configureForVoiceChat(defaultToSpeaker: true)
             
-            // Set preferred sample rate for WebRTC (24kHz for OpenAI Realtime)
-            try session.setPreferredSampleRate(24000)
-            
-            // Activate the session
-            try session.setActive(true)
-            
-            // SOLVE-6: Explicitly set speaker as default output
-            // .voiceChat mode defaults to receiver, so we override to speaker
-            try session.overrideOutputAudioPort(.speaker)
-            currentAudioOutput = .builtInSpeaker
+            // Start observing route changes so we can react to Bluetooth/headphone events
+            await sessionManager.startRouteChangeObservation()
             
             state = .configured
-            print("[WebRTCAudioHandler] ✅ Audio session configured (speaker output)")
+            print("[WebRTCAudioHandler] ✅ Audio session configured via AudioSessionManager")
             
         } catch {
             state = .error(error)
             throw error
         }
-        #else
-        // macOS doesn't require explicit audio session configuration
-        state = .configured
-        #endif
     }
     
     /// Deactivates the audio session
     public func deactivateAudioSession() async {
-        #if os(iOS)
-        do {
-            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-            state = .idle
-            print("[WebRTCAudioHandler] ✅ Audio session deactivated")
-        } catch {
-            print("[WebRTCAudioHandler] ⚠️ Failed to deactivate audio session: \(error)")
-        }
-        #else
+        await sessionManager.stopRouteChangeObservation()
+        await sessionManager.deactivate()
         state = .idle
-        #endif
+        print("[WebRTCAudioHandler] ✅ Audio session deactivated via AudioSessionManager")
     }
     
     // MARK: - Audio Control
@@ -119,99 +87,32 @@ public actor WebRTCAudioHandler {
     
     /// Sets the audio output device
     ///
+    /// Delegates to AudioSessionManager which handles verification and route changes.
+    ///
     /// - Parameter device: The target audio output device
     /// - Throws: Error if the device change fails
     public func setAudioOutput(device: AudioOutputDeviceType) async throws {
-        #if os(iOS)
-        let session = AVAudioSession.sharedInstance()
-        
-        do {
-            // Base options for all modes - maintain Bluetooth and mixing support
-            var options: AVAudioSession.CategoryOptions = [
-                .allowBluetooth,
-                .allowBluetoothA2DP,
-                .mixWithOthers
-            ]
-            
-            switch device {
-            case .builtInSpeaker:
-                // Add defaultToSpeaker for speaker output
-                options.insert(.defaultToSpeaker)
-                try session.setCategory(.playAndRecord, mode: .voiceChat, options: options)
-                try session.overrideOutputAudioPort(.speaker)
-                
-            case .builtInReceiver:
-                // No defaultToSpeaker - voiceChat mode routes to receiver
-                try session.setCategory(.playAndRecord, mode: .voiceChat, options: options)
-                try session.overrideOutputAudioPort(.none)
-                
-            case .bluetooth, .wiredHeadphones:
-                // External devices - no defaultToSpeaker, let system route
-                try session.setCategory(.playAndRecord, mode: .voiceChat, options: options)
-                try session.overrideOutputAudioPort(.none)
-                
-            case .systemDefault, .smart:
-                // Default to speaker (matching initial configureAudioSession behavior)
-                options.insert(.defaultToSpeaker)
-                try session.setCategory(.playAndRecord, mode: .voiceChat, options: options)
-                try session.overrideOutputAudioPort(.speaker)
-            }
-            
-            currentAudioOutput = device
-            print("[WebRTCAudioHandler] 🔊 Audio output set to: \(device)")
-            
-        } catch {
-            print("[WebRTCAudioHandler] ❌ Failed to set audio output: \(error)")
-            throw error
+        try await sessionManager.setAudioOutput(device: device)
+        print("[WebRTCAudioHandler] 🔊 Audio output set to: \(device)")
+    }
+    
+    /// The current audio output device
+    ///
+    /// Computed property that queries AudioSessionManager for actual system state.
+    /// This ensures the value never drifts from reality.
+    public var currentAudioOutput: AudioOutputDeviceType {
+        get async {
+            await sessionManager.currentAudioOutput
         }
-        #else
-        currentAudioOutput = device
-        #endif
     }
     
     /// Gets available audio output devices
+    ///
+    /// Delegates to AudioSessionManager for consistent device enumeration.
     public var availableAudioOutputDevices: [AudioOutputDeviceType] {
-        #if os(iOS)
-        var devices: [AudioOutputDeviceType] = [.builtInSpeaker, .builtInReceiver]
-        
-        let session = AVAudioSession.sharedInstance()
-        let currentRoute = session.currentRoute
-        
-        // Collect unique Bluetooth devices
-        var bluetoothNames: Set<String> = []
-        var headphoneNames: Set<String> = []
-        
-        for output in currentRoute.outputs {
-            switch output.portType {
-            case .bluetoothA2DP, .bluetoothHFP, .bluetoothLE:
-                let name = output.portName
-                if !name.isEmpty {
-                    bluetoothNames.insert(name)
-                }
-            case .headphones:
-                let name = output.portName
-                if !name.isEmpty {
-                    headphoneNames.insert(name)
-                }
-            default:
-                break
-            }
+        get async {
+            await sessionManager.availableAudioOutputDevices
         }
-        
-        // Add bluetooth devices with names
-        for name in bluetoothNames {
-            devices.append(.bluetooth(name: name))
-        }
-        
-        // Add headphone devices with names
-        for name in headphoneNames {
-            devices.append(.wiredHeadphones(name: name))
-        }
-        
-        return devices
-        #else
-        return [.systemDefault]
-        #endif
     }
     
     // MARK: - State

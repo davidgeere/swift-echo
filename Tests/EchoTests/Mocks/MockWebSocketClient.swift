@@ -258,7 +258,7 @@ public actor MockWebSocketClient {
             "session": {
                 "id": "mock_session",
                 "object": "realtime.session",
-                "model": "gpt-4o-realtime",
+                "model": "gpt-realtime-mini",
                 "modalities": ["text", "audio"]
             }
         }
@@ -440,7 +440,7 @@ public actor MockWebSocketClient {
                 "session": {
                     "id": "\(session.id)",
                     "object": "realtime.session",
-                    "model": "\(session.model ?? "gpt-4o-realtime")",
+                    "model": "\(session.model ?? "gpt-realtime-mini")",
                     "voice": "\(session.voice ?? "alloy")"
                 }
             }
@@ -522,7 +522,7 @@ extension MockWebSocketClient {
         let events: [ServerEvent] = [
             .sessionCreated(session: SessionInfo(
                 id: "sess_test",
-                model: "gpt-4o-realtime",
+                model: "gpt-realtime-mini",
                 voice: "alloy"
             ))
         ]

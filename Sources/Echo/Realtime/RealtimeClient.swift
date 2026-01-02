@@ -62,10 +62,8 @@ public actor RealtimeClient: TurnManagerDelegate {
     /// Echo canceller for correlation-based echo detection
     private var echoCanceller: EchoCanceller?
 
-    // Stored for cleanup
-    #if os(iOS)
-    private var routeChangeObserver: NSObjectProtocol?
-    #endif
+    /// Task for route change monitoring via AudioSessionManager
+    private var routeChangeTask: Task<Void, Never>?
 
     // MARK: - Initialization
 
@@ -242,6 +240,12 @@ public actor RealtimeClient: TurnManagerDelegate {
             if configuration.startAudioAutomatically {
                 try await startAudioLevelMonitor()
             }
+            
+            // Start route change monitoring for WebRTC transport
+            // (WebSocket transport starts this in startAudio())
+            if handlesAudioNatively {
+                await startRouteChangeMonitoring()
+            }
 
             sessionState = .connected
 
@@ -325,13 +329,9 @@ public actor RealtimeClient: TurnManagerDelegate {
         // Stop audio
         await stopAudio()
 
-        // Remove notification observer
-        #if os(iOS)
-        if let observer = routeChangeObserver {
-            NotificationCenter.default.removeObserver(observer)
-            routeChangeObserver = nil
-        }
-        #endif
+        // Cancel route change monitoring
+        routeChangeTask?.cancel()
+        routeChangeTask = nil
 
         // Close transport (WebSocket or WebRTC)
         await transport.disconnect()
@@ -424,11 +424,11 @@ public actor RealtimeClient: TurnManagerDelegate {
                 await playback.setEchoCanceller(canceller)
             }
 
-            // Set up route change observer for audio output changes
-            #if os(iOS)
-            await observeAudioRouteChanges()
+            // Set up route change monitoring via AudioSessionManager
+            await startRouteChangeMonitoring()
 
             // Apply default audio output if configured
+            #if os(iOS)
             if let defaultOutput = configuration.defaultAudioOutput {
                 try await applyDefaultAudioOutput(defaultOutput)
             }
@@ -1192,34 +1192,30 @@ public actor RealtimeClient: TurnManagerDelegate {
         }
     }
 
-    /// Observes audio route changes and emits events when output device changes
-    #if os(iOS)
-    private func observeAudioRouteChanges() async {
-        let notificationCenter = NotificationCenter.default
-
-        // Store observer for cleanup
-        routeChangeObserver = notificationCenter.addObserver(
-            forName: AVAudioSession.routeChangeNotification,
-            object: nil,
-            queue: nil
-        ) { [weak self] notification in
-            Task { [weak self] in
-                guard let self = self,
-                    let playback = await self.audioPlayback
-                else { return }
-
-                // Get current output device
-                let currentDevice = await playback.currentAudioOutput
-
+    /// Starts monitoring audio route changes via AudioSessionManager
+    ///
+    /// This works for both WebRTC and WebSocket transports, providing unified
+    /// route change handling when the user changes audio output or Bluetooth connects/disconnects.
+    private func startRouteChangeMonitoring() async {
+        // Cancel any existing task
+        routeChangeTask?.cancel()
+        
+        // Subscribe to route changes from the shared AudioSessionManager
+        routeChangeTask = Task { [weak self] in
+            let sessionManager = AudioSessionManager.shared
+            
+            for await newDevice in await sessionManager.routeChangeStream {
+                guard let self = self else { break }
+                guard !Task.isCancelled else { break }
+                
                 // Auto-switch VAD for the new device
-                await self.autoSwitchVADForDevice(currentDevice)
-
+                await self.autoSwitchVADForDevice(newDevice)
+                
                 // Emit event for output change
-                await self.eventEmitter.emit(.audioOutputChanged(device: currentDevice))
+                await self.eventEmitter.emit(.audioOutputChanged(device: newDevice))
             }
         }
     }
-    #endif
 }
 
 // MARK: - Configuration

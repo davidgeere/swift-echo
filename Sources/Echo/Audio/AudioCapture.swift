@@ -33,6 +33,9 @@ public actor AudioCapture: AudioCaptureProtocol {
     public let audioLevelStream: AsyncStream<AudioLevels>
     private let audioLevelContinuation: AsyncStream<AudioLevels>.Continuation
 
+    /// Reference to the shared audio session manager
+    private let sessionManager = AudioSessionManager.shared
+
     // MARK: - Gating Properties (Echo Protection)
 
     /// Whether audio gating is enabled (thread-safe via lock)
@@ -136,19 +139,10 @@ public actor AudioCapture: AudioCaptureProtocol {
         #endif
 
         do {
-            // Configure audio session
-            #if os(iOS)
-            let audioSession = AVAudioSession.sharedInstance()
-            // Use playAndRecord category to support both input and output
-            // .voiceChat mode enables acoustic echo cancellation (AEC)
-            // Remove .defaultToSpeaker to use earpiece which has better echo cancellation
-            try audioSession.setCategory(
-                .playAndRecord,
-                mode: .voiceChat,
-                options: [.allowBluetoothHFP, .mixWithOthers]
-            )
-            try audioSession.setActive(true, options: [])
-            #endif
+            // Configure audio session via shared manager
+            // WebSocket transport doesn't default to speaker (uses earpiece for better echo cancellation)
+            // Note: This may be a no-op if AudioPlayback already configured the session
+            try await sessionManager.configureForVoiceChat(defaultToSpeaker: false)
 
             // Create audio engine
             let engine = AVAudioEngine()
@@ -247,15 +241,14 @@ public actor AudioCapture: AudioCaptureProtocol {
     }
 
     /// Stops capturing audio
-    public func stop() {
+    public func stop() async {
         guard isCapturing else { return }
 
         inputNode?.removeTap(onBus: 0)
         audioEngine?.stop()
 
-        #if os(iOS)
-        try? AVAudioSession.sharedInstance().setActive(false)
-        #endif
+        // Deactivate session via shared manager
+        await sessionManager.deactivate()
 
         audioEngine = nil
         inputNode = nil

@@ -27,10 +27,10 @@ public protocol AudioPlaybackProtocol: Actor {
     func setAudioOutput(device: AudioOutputDeviceType) async throws
     
     /// List of available audio output devices
-    var availableAudioOutputDevices: [AudioOutputDeviceType] { get }
+    var availableAudioOutputDevices: [AudioOutputDeviceType] { get async }
     
     /// Current active audio output device
-    var currentAudioOutput: AudioOutputDeviceType { get }
+    var currentAudioOutput: AudioOutputDeviceType { get async }
     
     /// Whether playback is currently active
     var isActive: Bool { get }

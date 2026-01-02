@@ -72,11 +72,15 @@ public actor MockAudioPlayback: AudioPlaybackProtocol {
     }
     
     public var availableAudioOutputDevices: [AudioOutputDeviceType] {
-        return [.builtInSpeaker, .builtInReceiver, .bluetooth(name: "Mock AirPods")]
+        get async {
+            return [.builtInSpeaker, .builtInReceiver, .bluetooth(name: "Mock AirPods")]
+        }
     }
     
     public var currentAudioOutput: AudioOutputDeviceType {
-        return currentOutput
+        get async {
+            return currentOutput
+        }
     }
     
     public var isActive: Bool {
