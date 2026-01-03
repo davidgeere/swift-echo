@@ -700,20 +700,30 @@ public actor RealtimeClient: TurnManagerDelegate {
     public func updateSessionConfig(turnDetection: TurnDetection) async throws {
         guard let vadConfig = turnDetection.vadConfiguration else {
             // Handle disabled or manual mode
-            var sessionConfig: [String: SendableJSON] = [:]
+            // GA API format: turn_detection is under session.audio.input.turn_detection
+            var turnDetectionValue: SendableJSON
             switch turnDetection {
             case .manual:
-                sessionConfig["turn_detection"] = .object([
+                turnDetectionValue = .object([
                     "type": .string("server_vad"),
                     "threshold": .number(0.5),
                     "silence_duration_ms": .number(Double(Int.max)),
                     "prefix_padding_ms": .number(300.0),
                 ])
             case .disabled:
-                sessionConfig["turn_detection"] = SendableJSON.null
+                turnDetectionValue = SendableJSON.null
             case .automatic:
-                break  // Handled below
+                return  // Handled below
             }
+            
+            let sessionConfig: [String: SendableJSON] = [
+                "type": .string("realtime"),
+                "audio": .object([
+                    "input": .object([
+                        "turn_detection": turnDetectionValue
+                    ])
+                ])
+            ]
             try await send(.sessionUpdate(session: .object(sessionConfig)))
             return
         }
@@ -735,8 +745,14 @@ public actor RealtimeClient: TurnManagerDelegate {
             turnDetectionConfig["eagerness"] = .string(vadConfig.eagerness.rawValue)
         }
 
+        // GA API format: turn_detection is under session.audio.input.turn_detection
         let sessionConfig: [String: SendableJSON] = [
-            "turn_detection": .object(turnDetectionConfig)
+            "type": .string("realtime"),
+            "audio": .object([
+                "input": .object([
+                    "turn_detection": .object(turnDetectionConfig)
+                ])
+            ])
         ]
 
         try await send(.sessionUpdate(session: .object(sessionConfig)))

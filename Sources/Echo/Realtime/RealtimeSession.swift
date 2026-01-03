@@ -113,6 +113,7 @@ public struct RealtimeSession: Sendable {
     /// Converts to the format expected by the Realtime API
     public func toRealtimeFormat() -> [String: Any] {
         var config: [String: Any] = [
+            "type": "realtime",
             "modalities": ["text", "audio"],
             "voice": voice.rawValue,
             "input_audio_format": inputAudioFormat.rawValue,

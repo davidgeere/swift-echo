@@ -1126,9 +1126,15 @@ public class Conversation: RealtimeClientDelegate {
         )
 
         // Create session update with new VAD settings
+        // GA API format: turn_detection is under session.audio.input.turn_detection
         let turnDetectionDict = updatedVAD.toRealtimeFormat()
         let sessionUpdate: [String: Any] = [
-            "turn_detection": turnDetectionDict
+            "type": "realtime",
+            "audio": [
+                "input": [
+                    "turn_detection": turnDetectionDict
+                ]
+            ]
         ]
 
         let sessionJSON = try SendableJSON.from(dictionary: sessionUpdate)
