@@ -1,6 +1,7 @@
 // MCPServer.swift
 
 import Foundation
+@preconcurrency import AnyCodable
 
 /// Model Context Protocol server configuration
 public struct MCPServer: Sendable {

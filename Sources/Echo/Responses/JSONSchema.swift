@@ -3,6 +3,7 @@
 // JSON schema for structured outputs
 
 import Foundation
+@preconcurrency import AnyCodable
 
 /// JSON schema for structured outputs
 public struct JSONSchema: Codable, Sendable {

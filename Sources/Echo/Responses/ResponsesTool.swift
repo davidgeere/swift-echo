@@ -3,6 +3,7 @@
 // Tool definition for function calling
 
 import Foundation
+@preconcurrency import AnyCodable
 
 /// Tool definition for function calling
 /// Note: Responses API uses flat structure (not nested like Chat Completions API)

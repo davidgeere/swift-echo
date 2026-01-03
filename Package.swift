@@ -19,7 +19,9 @@ let package = Package(
         // Advanced stream operations for async sequences
         .package(url: "https://github.com/apple/swift-async-algorithms.git", from: "1.0.0"),
         // Swift Testing framework
-        .package(url: "https://github.com/apple/swift-testing.git", from: "0.10.0")
+        .package(url: "https://github.com/apple/swift-testing.git", from: "0.10.0"),
+        // Type-erased Codable wrappers
+        .package(url: "https://github.com/Flight-School/AnyCodable.git", from: "0.6.0")
     ],
     targets: [
         .target(
@@ -27,6 +29,7 @@ let package = Package(
             dependencies: [
                 .product(name: "AsyncHTTPClient", package: "async-http-client"),
                 .product(name: "AsyncAlgorithms", package: "swift-async-algorithms"),
+                .product(name: "AnyCodable", package: "AnyCodable"),
                 "WebRTC"
             ],
             swiftSettings: [

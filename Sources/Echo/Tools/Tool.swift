@@ -1,6 +1,7 @@
 // Tool.swift
 
 import Foundation
+@preconcurrency import AnyCodable
 
 /// Represents a tool/function that can be called by the model
 public struct Tool: Sendable {

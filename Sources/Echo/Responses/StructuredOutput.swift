@@ -3,6 +3,7 @@
 // JSON schema support for structured outputs
 
 import Foundation
+@preconcurrency import AnyCodable
 
 /// Helper for generating structured outputs using JSON schema
 public struct StructuredOutputHelper {
