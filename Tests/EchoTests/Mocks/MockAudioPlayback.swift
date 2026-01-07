@@ -16,7 +16,17 @@ public actor MockAudioPlayback: AudioPlaybackProtocol {
     
     public let audioLevelStream: AsyncStream<AudioLevels>
     
+    /// Configurable list of available devices (for testing `.smart` selection)
+    public var mockAvailableDevices: [AudioOutputDeviceType]
+    
+    /// Creates a mock with default device configuration
     public init() {
+        self.init(availableDevices: [.builtInSpeaker, .builtInReceiver, .bluetooth(name: "Mock AirPods")])
+    }
+    
+    /// Creates a mock with custom available devices for testing
+    /// - Parameter availableDevices: The devices to report as available
+    public init(availableDevices: [AudioOutputDeviceType]) {
         var continuation: AsyncStream<AudioLevels>.Continuation?
         audioLevelStream = AsyncStream { cont in
             continuation = cont
@@ -25,6 +35,7 @@ public actor MockAudioPlayback: AudioPlaybackProtocol {
             preconditionFailure("Failed to initialize audio level stream continuation")
         }
         levelContinuation = levelCont
+        mockAvailableDevices = availableDevices
     }
     
     public func start() async throws {
@@ -73,7 +84,7 @@ public actor MockAudioPlayback: AudioPlaybackProtocol {
     
     public var availableAudioOutputDevices: [AudioOutputDeviceType] {
         get async {
-            return [.builtInSpeaker, .builtInReceiver, .bluetooth(name: "Mock AirPods")]
+            return mockAvailableDevices
         }
     }
     
