@@ -28,6 +28,35 @@ struct AudioOutputDeviceTests {
         #expect(AudioOutputDeviceType.bluetooth(name: "AirPods").isBluetooth == true)
         #expect(AudioOutputDeviceType.wiredHeadphones(name: nil).isBluetooth == false)
         #expect(AudioOutputDeviceType.systemDefault.isBluetooth == false)
+        #expect(AudioOutputDeviceType.smart.isBluetooth == false)
+    }
+    
+    @Test("AudioOutputDeviceType isWiredHeadphones property works correctly")
+    func testIsWiredHeadphonesProperty() {
+        #expect(AudioOutputDeviceType.builtInSpeaker.isWiredHeadphones == false)
+        #expect(AudioOutputDeviceType.builtInReceiver.isWiredHeadphones == false)
+        #expect(AudioOutputDeviceType.bluetooth(name: "AirPods").isWiredHeadphones == false)
+        #expect(AudioOutputDeviceType.wiredHeadphones(name: "Beats").isWiredHeadphones == true)
+        #expect(AudioOutputDeviceType.wiredHeadphones(name: nil).isWiredHeadphones == true)
+        #expect(AudioOutputDeviceType.systemDefault.isWiredHeadphones == false)
+        #expect(AudioOutputDeviceType.smart.isWiredHeadphones == false)
+    }
+    
+    @Test("AudioOutputDeviceType isExternalAudioDevice property works correctly")
+    func testIsExternalAudioDeviceProperty() {
+        // Built-in devices are NOT external
+        #expect(AudioOutputDeviceType.builtInSpeaker.isExternalAudioDevice == false)
+        #expect(AudioOutputDeviceType.builtInReceiver.isExternalAudioDevice == false)
+        #expect(AudioOutputDeviceType.systemDefault.isExternalAudioDevice == false)
+        #expect(AudioOutputDeviceType.smart.isExternalAudioDevice == false)
+        
+        // Bluetooth IS external
+        #expect(AudioOutputDeviceType.bluetooth(name: "AirPods").isExternalAudioDevice == true)
+        #expect(AudioOutputDeviceType.bluetooth(name: nil).isExternalAudioDevice == true)
+        
+        // Wired headphones ARE external
+        #expect(AudioOutputDeviceType.wiredHeadphones(name: "Beats").isExternalAudioDevice == true)
+        #expect(AudioOutputDeviceType.wiredHeadphones(name: nil).isExternalAudioDevice == true)
     }
     
     @Test("AudioOutputDeviceType equality works correctly")
@@ -239,6 +268,150 @@ struct AudioOutputDeviceEventTests {
         
         let current = await conversation.currentAudioOutput
         #expect(current == .systemDefault)
+    }
+}
+
+@Suite("Smart Audio Output Selection Tests (SAM-129)")
+struct SmartAudioOutputSelectionTests {
+    
+    @Test("Smart mode selects Bluetooth when available")
+    func testSmartSelectsBluetooth() async throws {
+        // Arrange: Mock with Bluetooth device available
+        let mockPlayback = MockAudioPlayback(availableDevices: [
+            .builtInSpeaker,
+            .builtInReceiver,
+            .bluetooth(name: "AirPods Pro")
+        ])
+        
+        let emitter = EventEmitter()
+        let config = RealtimeClientConfiguration(
+            model: .gptRealtimeMini,
+            voice: .alloy,
+            audioFormat: .pcm16,
+            turnDetection: .disabled,
+            enableTranscription: false,
+            startAudioAutomatically: false,
+            defaultAudioOutput: .smart
+        )
+        
+        let client = RealtimeClient(
+            apiKey: "test-key",
+            configuration: config,
+            eventEmitter: emitter,
+            audioPlaybackFactory: { mockPlayback }
+        )
+        
+        // Act: Start audio (which applies default audio output)
+        try await client.startAudio()
+        
+        // Assert: Should select Bluetooth
+        let currentOutput = await client.currentAudioOutput
+        #expect(currentOutput.isBluetooth == true)
+    }
+    
+    @Test("Smart mode selects wired headphones when no Bluetooth available")
+    func testSmartSelectsWiredHeadphones() async throws {
+        // Arrange: Mock with only wired headphones (no Bluetooth)
+        let mockPlayback = MockAudioPlayback(availableDevices: [
+            .builtInSpeaker,
+            .builtInReceiver,
+            .wiredHeadphones(name: "EarPods")
+        ])
+        
+        let emitter = EventEmitter()
+        let config = RealtimeClientConfiguration(
+            model: .gptRealtimeMini,
+            voice: .alloy,
+            audioFormat: .pcm16,
+            turnDetection: .disabled,
+            enableTranscription: false,
+            startAudioAutomatically: false,
+            defaultAudioOutput: .smart
+        )
+        
+        let client = RealtimeClient(
+            apiKey: "test-key",
+            configuration: config,
+            eventEmitter: emitter,
+            audioPlaybackFactory: { mockPlayback }
+        )
+        
+        // Act: Start audio (which applies default audio output)
+        try await client.startAudio()
+        
+        // Assert: Should select wired headphones
+        let currentOutput = await client.currentAudioOutput
+        #expect(currentOutput.isWiredHeadphones == true)
+    }
+    
+    @Test("Smart mode prioritizes Bluetooth over wired headphones")
+    func testSmartPrioritizesBluetooth() async throws {
+        // Arrange: Mock with BOTH Bluetooth AND wired headphones
+        let mockPlayback = MockAudioPlayback(availableDevices: [
+            .builtInSpeaker,
+            .builtInReceiver,
+            .wiredHeadphones(name: "EarPods"),
+            .bluetooth(name: "AirPods Pro")
+        ])
+        
+        let emitter = EventEmitter()
+        let config = RealtimeClientConfiguration(
+            model: .gptRealtimeMini,
+            voice: .alloy,
+            audioFormat: .pcm16,
+            turnDetection: .disabled,
+            enableTranscription: false,
+            startAudioAutomatically: false,
+            defaultAudioOutput: .smart
+        )
+        
+        let client = RealtimeClient(
+            apiKey: "test-key",
+            configuration: config,
+            eventEmitter: emitter,
+            audioPlaybackFactory: { mockPlayback }
+        )
+        
+        // Act: Start audio (which applies default audio output)
+        try await client.startAudio()
+        
+        // Assert: Should select Bluetooth (higher priority)
+        let currentOutput = await client.currentAudioOutput
+        #expect(currentOutput.isBluetooth == true)
+    }
+    
+    @Test("Smart mode falls back to speaker when no external devices available")
+    func testSmartFallsBackToSpeaker() async throws {
+        // Arrange: Mock with NO external devices (no Bluetooth, no wired)
+        let mockPlayback = MockAudioPlayback(availableDevices: [
+            .builtInSpeaker,
+            .builtInReceiver
+        ])
+        
+        let emitter = EventEmitter()
+        let config = RealtimeClientConfiguration(
+            model: .gptRealtimeMini,
+            voice: .alloy,
+            audioFormat: .pcm16,
+            turnDetection: .disabled,
+            enableTranscription: false,
+            startAudioAutomatically: false,
+            defaultAudioOutput: .smart
+        )
+        
+        let client = RealtimeClient(
+            apiKey: "test-key",
+            configuration: config,
+            eventEmitter: emitter,
+            audioPlaybackFactory: { mockPlayback }
+        )
+        
+        // Act: Start audio (which applies default audio output)
+        try await client.startAudio()
+        
+        // Assert: Should fall back to speaker
+        let currentOutput = await client.currentAudioOutput
+        #expect(currentOutput == .builtInSpeaker)
     }
 }
 

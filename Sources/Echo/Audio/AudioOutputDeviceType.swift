@@ -56,6 +56,24 @@ public enum AudioOutputDeviceType: Sendable, Equatable {
             return false
         }
     }
+    
+    /// Whether this is a wired headphones device
+    public var isWiredHeadphones: Bool {
+        switch self {
+        case .wiredHeadphones:
+            return true
+        default:
+            return false
+        }
+    }
+    
+    /// Whether this is an external audio device (Bluetooth OR wired headphones)
+    ///
+    /// External devices typically don't produce echo since the speaker is close to
+    /// the ear and away from the microphone.
+    public var isExternalAudioDevice: Bool {
+        isBluetooth || isWiredHeadphones
+    }
 
     /// Whether this device type may produce echo (speaker output picked up by microphone)
     public var mayProduceEcho: Bool {

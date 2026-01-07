@@ -858,15 +858,14 @@ public actor RealtimeClient: TurnManagerDelegate {
     private func applyDefaultAudioOutput(_ defaultOutput: AudioOutputDeviceType) async throws {
         switch defaultOutput {
         case .smart:
-            // Smart default: Bluetooth if connected, otherwise speaker
+            // Smart default: External device (Bluetooth/Wired) if connected, otherwise speaker
+            // Priority: Bluetooth > Wired Headphones > Speaker
             let availableDevices = await availableAudioOutputDevices
-            if availableDevices.contains(where: { $0.isBluetooth }) {
-                // Find the first Bluetooth device
-                if let bluetoothDevice = availableDevices.first(where: { $0.isBluetooth }) {
-                    try await setAudioOutput(device: bluetoothDevice)
-                }
+            if let externalDevice = availableDevices.first(where: { $0.isBluetooth })
+                ?? availableDevices.first(where: { $0.isWiredHeadphones }) {
+                try await setAudioOutput(device: externalDevice)
             } else {
-                // Fall back to speaker
+                // Fall back to speaker only when no external devices connected
                 try await setAudioOutput(device: .builtInSpeaker)
             }
 
