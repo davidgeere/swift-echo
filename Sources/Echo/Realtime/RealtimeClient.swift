@@ -1151,6 +1151,8 @@ public actor RealtimeClient: TurnManagerDelegate {
                     model: configuration.model.rawValue,
                     mode: .audio
                 ))
+            } else {
+                print("[RealtimeClient] ⚠️ response.done received with nil usage data (id: \(response.id), status: \(response.status ?? "unknown")). This response will not be tracked for billing.")
             }
 
         // Function calls
