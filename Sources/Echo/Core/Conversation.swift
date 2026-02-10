@@ -481,21 +481,10 @@ public class Conversation: RealtimeClientDelegate {
                                     case .responseFailed(let error):
                                         await eventEmitter.emit(.error(error: EchoError.invalidResponse(error)))
                                         
-                                    case .usageUpdate(let inputTokens, let outputTokens):
-                                        // Handle streaming usage update event
-                                        let usage = Usage(
-                                            promptTokens: inputTokens,
-                                            completionTokens: outputTokens,
-                                            totalTokens: inputTokens + outputTokens,
-                                            audioInputTokens: 0,
-                                            audioOutputTokens: 0,
-                                            cachedTokens: 0
-                                        )
-                                        await eventEmitter.emit(.usageReported(
-                                            usage: usage,
-                                            model: configuration.responsesModel.rawValue,
-                                            mode: .text
-                                        ))
+                                    case .usageUpdate:
+                                        // Intentionally ignored: usage is captured from .responseDone
+                                        // which includes cached token data. Using both would double-count.
+                                        break
                                         
                                     case .raw(let type, let data):
                                         // Handle raw events that might contain text
@@ -749,21 +738,10 @@ public class Conversation: RealtimeClientDelegate {
                                     case .responseFailed(let error):
                                         await eventEmitter.emit(.error(error: EchoError.invalidResponse(error)))
                                         
-                                    case .usageUpdate(let inputTokens, let outputTokens):
-                                        // Handle streaming usage update event
-                                        let usage = Usage(
-                                            promptTokens: inputTokens,
-                                            completionTokens: outputTokens,
-                                            totalTokens: inputTokens + outputTokens,
-                                            audioInputTokens: 0,
-                                            audioOutputTokens: 0,
-                                            cachedTokens: 0
-                                        )
-                                        await eventEmitter.emit(.usageReported(
-                                            usage: usage,
-                                            model: configuration.responsesModel.rawValue,
-                                            mode: .text
-                                        ))
+                                    case .usageUpdate:
+                                        // Intentionally ignored: usage is captured from .responseDone
+                                        // which includes cached token data. Using both would double-count.
+                                        break
                                         
                                     case .raw(let type, let data):
                                         // Handle raw events that might contain text
@@ -888,21 +866,10 @@ public class Conversation: RealtimeClientDelegate {
                         } else {
                             print("[Conversation] ⚠️ Text mode (processResponseStream) - NO usage data to emit")
                         }
-                    case .usageUpdate(let inputTokens, let outputTokens):
-                        // Handle streaming usage update event
-                        let usage = Usage(
-                            promptTokens: inputTokens,
-                            completionTokens: outputTokens,
-                            totalTokens: inputTokens + outputTokens,
-                            audioInputTokens: 0,
-                            audioOutputTokens: 0,
-                            cachedTokens: 0
-                        )
-                        await emitter.emit(.usageReported(
-                            usage: usage,
-                            model: model.rawValue,
-                            mode: .text
-                        ))
+                    case .usageUpdate:
+                        // Intentionally ignored: usage is captured from .responseDone
+                        // which includes cached token data. Using both would double-count.
+                        break
                     default:
                         break
                     }
