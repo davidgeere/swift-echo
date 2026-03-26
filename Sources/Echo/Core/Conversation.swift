@@ -1045,6 +1045,20 @@ public class Conversation: RealtimeClientDelegate {
         try await realtimeClient?.send(.responseCreate(response: nil))
     }
 
+    /// Triggers the assistant to generate a response.
+    /// Use after sending a text message via `send()` in automatic turn detection mode,
+    /// where VAD won't fire because there's no audio input to detect silence on.
+    /// - Throws: EchoError if not in audio mode or client not initialized
+    public func triggerResponse() async throws {
+        guard mode == .audio else {
+            throw EchoError.invalidMode("Cannot trigger response in text mode")
+        }
+        guard let client = realtimeClient else {
+            throw EchoError.clientNotInitialized("Realtime client not initialized")
+        }
+        try await client.send(.responseCreate(response: nil))
+    }
+    
     /// Interrupts the assistant (stops current response)
     /// - Throws: EchoError if not in audio mode
     public func interruptAssistant() async throws {
